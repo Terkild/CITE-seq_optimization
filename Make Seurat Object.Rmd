@@ -19,21 +19,17 @@ require("tidyverse", quietly=T)
 library("Matrix", quietly=T)
 library("DropletUtils", quietly=T)
 
-
-currentDir <- "C:/Users/mqh628/OneDrive - Københavns Universitet/Koralovlab/CITE-seq_titration"
-t2g.file <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger.txt"
-kallistobusDir <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/counts_unfiltered"
-kallistobusDirADT <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered"
-kallistobusDirHTO <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered"
-setwd(currentDir)
+t2g.file <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger.txt"
+kallistobusDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/counts_unfiltered"
+kallistobusDirADT <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered"
+kallistobusDirHTO <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered"
 
 superclusters.levels <- c("T cells","MO/MØ/DC","B cells","Other")
 color.supercluster <- RColorBrewer::brewer.pal(4,"Dark2")
 names(color.supercluster) <- superclusters.levels
 
-
 ## Load helper functions (ggplot themes, biexp transformation etc.)
-source("Utility.R")
+source("R/Utilities.R")
 ```
 
 ## Load GEX data
@@ -83,7 +79,7 @@ kallisto.GEX <- raw_mtx
 
 ## Load Kallisto HTO data
 
-```{r loadKallisto}
+```{r loadHTO}
 res_mat <- read_count_output(kallistobusDirHTO, name = "cells_x_genes")
 dim(res_mat)
 tot_counts <- Matrix::colSums(res_mat)
@@ -96,7 +92,7 @@ kallisto.HTO <- res_mat
 
 ## Load Kallisto ADT data
 
-```{r loadKallisto}
+```{r loadADT}
 res_mat <- read_count_output(kallistobusDirADT, name = "cells_x_genes")
 dim(res_mat)
 tot_counts <- Matrix::colSums(res_mat)
@@ -145,7 +141,7 @@ object <- subset(object, subset=sampleID %in% c(1:6))
 
 ## Assign annotation to each cell
 
-```{r}
+```{r annotation}
 ## Rename groups to meaningful names
 groups <- c("PBMC_50ul_1_1000k","PBMC_50ul_4_1000k","PBMC_25ul_4_1000k","PBMC_25ul_4_200k","Lung_50ul_1_500k","Lung_50ul_4_500k","Doublet","Negative")
 object$group <- object$sampleID
@@ -161,7 +157,7 @@ object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k",
 
 ## Filter dead/dying cells
 
-Based on mitochondrial reads. Cutoff set to 15% by visual inspection.
+Based on mitochondrial reads and number of detected genes. Cutoff set to 15% MT and at least 60 expressed genes by visual inspection.
 
 ```{r filter}
 DefaultAssay(object) <- "RNA.kallisto"
@@ -181,7 +177,7 @@ object <- subset(object, subset = percent.mt <= cutoff.percent.mt & nFeature_RNA
 
 https://mattpm.github.io/dsb/ 
 
-```{r}
+```{r dsbnorm}
 #devtools::install_github(repo = 'MattPM/dsb')
 library(dsb)
 
@@ -200,7 +196,6 @@ for(i in c(1:6)){
 }
 
 object = SetAssayData(object=object, assay="ADT.kallisto", slot="data", new.data = normalized_matrix_individual)
-#object = SetAssayData(object=object, assay="ADT.kallisto", slot="scale", new.data = normalized_matrix_individual)
 
 plotData <- as.data.frame(normalized_matrix_individual)
 plotData$Marker <- rownames(plotData)
