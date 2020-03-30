@@ -1,0 +1,135 @@
+---
+title: "5P-CITE-seq Titration - ADT alignment methods"
+author: "Terkild Brink Buus"
+date: "28/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set()
+```
+
+## Load libraries etc.
+
+```{r}
+set.seed(114)
+require("Seurat")
+require("ggplot2")
+require("ggridges")
+require("gridExtra")
+#devtools::install_github("thomasp85/patchwork")
+library("patchwork")
+theme_set(theme_bw())
+
+currentDir <- "C:/Users/mqh628/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
+data10XDir <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/NYU-cellranger/raw_feature_bc_matrix"
+data10XADTDir <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_A1/outs/raw_feature_bc_matrix"
+dataCSCADTDir <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/umi_count"
+
+
+setwd(currentDir)
+
+superclusters.levels <- c("T cells","MO/MØ/DC","B cells","Other")
+color.supercluster <- RColorBrewer::brewer.pal(4,"Dark2")
+names(color.supercluster) <- superclusters.levels
+
+
+## Load helper functions (ggplot themes, biexp transformation etc.)
+source("Utility.R")
+
+object <- readRDS(file="5P-CITE-seq_Titration.rds")
+object <- subset(object, subset=dilution==1)
+
+```
+
+## Load in alternative counters
+
+```{r}
+data <- Read10X(data.dir=data10XDir)
+data <- data$`Antibody Capture`[-c(1:6),]
+
+object <- subset(object, cells=which(colnames(object) != "ACGCCAGAGGTGGGTT"))
+
+object[["ADT.cellrangerComplete"]] <- CreateAssayObject(counts=data[,colnames(object)])
+object[["ADT.cellranger"]] <- CreateAssayObject(counts=Read10X(data.dir=data10XADTDir)[,colnames(object)])
+
+data.CSC <- Read10X(data.dir=dataCSCADTDir, gene.column=1)
+data.CSC <- data.CSC[rownames(data.CSC) != "unmapped",]
+object[["ADT.csc"]] <- CreateAssayObject(counts=data.CSC[,colnames(object)])
+```
+
+## Compare UMI counts per cell across methods
+
+```{r}
+plotData <- FetchData(object,vars=c("sampleID","nCount_ADT.kallisto","nCount_ADT.cellranger","nCount_ADT.csc"))
+
+
+ggplot(plotData,aes(x=nCount_ADT.kallisto,y=nCount_ADT.cellranger,col=sampleID)) + geom_point() + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
+ggplot(plotData,aes(x=nCount_ADT.kallisto,y=nCount_ADT.csc,col=sampleID)) + geom_point() + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
+ggplot(plotData,aes(x=nCount_ADT.cellranger,y=nCount_ADT.csc,col=sampleID)) + geom_point() + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
+
+colnames(plotData) <- gsub("nCount_ADT.","",colnames(plotData))
+plotData <- plotData[order(rowSums(plotData[,-1]),decreasing=TRUE),]
+plotData$rank <- seq_along(plotData$sampleID)
+plotData <- reshape2::melt(plotData[,-1],id.vars=c("rank"))
+colnames(plotData) <- c("Rank","Counter","value")
+ggplot(plotData,aes(x=Rank,y=value,col=Counter,group=Counter)) + geom_point(alpha=0.5,size=1) + scale_y_continuous(trans="log10") + ylab("Sum of UMIs") + xlab("Barcode rank")
+```
+
+## Marker sums
+
+```{r}
+assays <- c("ADT.kallisto","ADT.cellranger","ADT.csc")
+#assays <- c("ADT.cellranger","ADT.cellrangerComplete")
+plotData <- sapply(assays,function(x){
+        y <- GetAssayData(object, assay=x ,slot="counts")
+        y <- apply(y,1,sum)
+    })
+
+plotData <- as.data.frame(plotData)
+plotData$Marker <- rownames(plotData)
+ggplot(data.frame(plotData),aes(x=ADT.kallisto,y=ADT.cellranger)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.cellranger-ADT.kallisto)/mean(c(ADT.cellranger,ADT.kallisto)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
+ggplot(data.frame(plotData),aes(x=ADT.kallisto,y=ADT.csc)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.csc-ADT.kallisto)/mean(c(ADT.csc,ADT.kallisto)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
+ggplot(data.frame(plotData),aes(x=ADT.cellranger,y=ADT.csc)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.csc-ADT.cellranger)/mean(c(ADT.csc,ADT.cellranger)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
+
+
+plotData <- plotData[order(rowMeans(plotData),decreasing=TRUE),]
+plotData <- reshape2::melt(plotData)
+colnames(plotData) <- c("Marker","Counter","value")
+ggplot(plotData,aes(x=Marker,y=value,col=Counter,group=Counter)) + geom_line() + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1))
+
+```
+
+## Rank plots
+
+```{r}
+data = reshape2::melt(plotData,id.vars=C("Marker"))
+colnames(data) <- c("cell","counter","value")
+data$group = object$group[data$cell]
+data$purpose = object$purpose[data$cell]
+FootPlot(object,data=data,group.by="counter",col.by="counter",wrap.by="purpose", drawBarcode=F, drawPoints=F, drawSmooth=T)
+
+data = FetchData(object,vars=c("adt_HLA-DR","adtcellranger_HLA-DR","adtcsc_HLA-DR-AATAGCGAGCAAGTA"), slot="counts")
+data = reshape2::melt(as.matrix(data))
+colnames(data) <- c("cell","counter","value")
+data$group = object$group[data$cell]
+data$purpose = object$purpose[data$cell]
+data$wrap = "All"
+FootPlot(object,data=data,group.by="counter",col.by="counter",wrap.by="wrap", drawBarcode=F, drawPoints=F, drawSmooth=T)
+
+```
+
+## Runtime
+
+All analysis was run on the NYU Medical Center computing cluster "BigPurple" on a "fat_node" with an allocated 16 cores and 64GB memory.
+
+```{r}
+time <- data.frame(ADT=c("kallisto"="7m54.320s", "cellranger"="348m21.313s", "csc"="173m29.692s"), HTO=c("kallisto"="4m12.157s", "cellranger"="233m7.943s", "csc"="160m40.705s"))
+
+time.s <- data.frame(ADT=c("kallisto"=474, "cellranger"=20901, "csc"=10410), HTO=c("kallisto"=252, "cellranger"=13988, "csc"=9641))
+
+time.s <- reshape2::melt(as.matrix(time.s))
+
+ggplot(time.s, aes(x=Var2,col=Var1,y=value,group=Var1)) + geom_line() + xlab("") + ylab("seconds") + scale_y_continuous(trans="log10") + theme_bw()
+
+```
