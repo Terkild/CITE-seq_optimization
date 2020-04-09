@@ -24,12 +24,11 @@ kallistobusDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/c
 kallistobusDirADT <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered"
 kallistobusDirHTO <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered"
 
-superclusters.levels <- c("T cells","MO/MØ/DC","B cells","Other")
-color.supercluster <- RColorBrewer::brewer.pal(4,"Dark2")
-names(color.supercluster) <- superclusters.levels
-
 ## Load helper functions (ggplot themes, biexp transformation etc.)
 source("R/Utilities.R")
+
+## Load predefined color schemes
+source("R/color.R")
 ```
 
 ## Load GEX data
@@ -151,7 +150,7 @@ levels(object$group) <- groups
 
 object$tissue <- factor(c("PBMC","PBMC","PBMC","PBMC","Lung","Lung","Doublet","Negative")[object$sampleID],levels=c("PBMC","Lung"))
 object$volume <- factor(c("50µl","50µl","25µl","25µl","50µl","50µl","Doublet","Negative")[object$sampleID])
-object$dilution <- factor(c("1","4","4","4","1","4","Doublet","Negative")[object$sampleID])
+object$dilution <- factor(c("DF1","DF4","DF4","DF4","DF1","DF4","Doublet","Negative")[object$sampleID])
 object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k","Doublet","Negative")[object$sampleID])
 ```
 
@@ -265,9 +264,16 @@ superclusters <- c("0"="T cells",
 
 object$supercluster <- factor(superclusters[as.character(Idents(object))],levels=superclusters.levels)
 
-DimPlot(object, group.by="supercluster")
+DimPlot(object, group.by="supercluster", reduction="tsne")
 table <- t(table(object$supercluster,object$group))
 round(table/rowSums(table)*100,2)
+```
+
+## Make fine-grained clustering
+```{r fineClusters}
+object <- FindNeighbors(object,dims = 1:30)
+object <- FindClusters(object, resolution = 1.2)
+table(Idents(object))
 ```
 
 ## Save Seurat object

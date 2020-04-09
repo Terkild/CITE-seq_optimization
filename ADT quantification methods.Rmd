@@ -1,12 +1,13 @@
 ---
-title: "5P-CITE-seq Titration - ADT alignment methods"
+title: "CITE-seq optimization - ADT quantification methods"
 author: "Terkild Brink Buus"
-date: "28/2/2020"
-output: html_document
+date: "30/3/2020"
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set()
+options(stringsAsFactors=FALSE)
 ```
 
 ## Load libraries etc.
@@ -14,43 +15,33 @@ knitr::opts_chunk$set()
 ```{r}
 set.seed(114)
 require("Seurat")
-require("ggplot2")
-require("ggridges")
-require("gridExtra")
-#devtools::install_github("thomasp85/patchwork")
-library("patchwork")
+require("tidyverse")
 theme_set(theme_bw())
+require("ggrepel")
 
-currentDir <- "C:/Users/mqh628/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
-data10XDir <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/NYU-cellranger/raw_feature_bc_matrix"
-data10XADTDir <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_A1/outs/raw_feature_bc_matrix"
-dataCSCADTDir <- "D:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/umi_count"
-
-
-setwd(currentDir)
-
-superclusters.levels <- c("T cells","MO/MØ/DC","B cells","Other")
-color.supercluster <- RColorBrewer::brewer.pal(4,"Dark2")
-names(color.supercluster) <- superclusters.levels
-
+data10XADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_A1/outs/raw_feature_bc_matrix"
+dataCSCADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/umi_count"
 
 ## Load helper functions (ggplot themes, biexp transformation etc.)
-source("Utility.R")
+source("R/Utilities.R")
+## Load predefined color schemes
+source("R/color.R")
+```
 
-object <- readRDS(file="5P-CITE-seq_Titration.rds")
+## Load Seurat object
+
+```{r loadSeurat}
+object <- readRDS(file="data/5P-CITE-seq_Titration.rds")
+
+## Subset object to focus on samples with dilution factor 1
 object <- subset(object, subset=dilution==1)
-
 ```
 
 ## Load in alternative counters
 
 ```{r}
-data <- Read10X(data.dir=data10XDir)
-data <- data$`Antibody Capture`[-c(1:6),]
-
 object <- subset(object, cells=which(colnames(object) != "ACGCCAGAGGTGGGTT"))
 
-object[["ADT.cellrangerComplete"]] <- CreateAssayObject(counts=data[,colnames(object)])
 object[["ADT.cellranger"]] <- CreateAssayObject(counts=Read10X(data.dir=data10XADTDir)[,colnames(object)])
 
 data.CSC <- Read10X(data.dir=dataCSCADTDir, gene.column=1)
@@ -91,32 +82,50 @@ plotData$Marker <- rownames(plotData)
 ggplot(data.frame(plotData),aes(x=ADT.kallisto,y=ADT.cellranger)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.cellranger-ADT.kallisto)/mean(c(ADT.cellranger,ADT.kallisto)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
 ggplot(data.frame(plotData),aes(x=ADT.kallisto,y=ADT.csc)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.csc-ADT.kallisto)/mean(c(ADT.csc,ADT.kallisto)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
 ggplot(data.frame(plotData),aes(x=ADT.cellranger,y=ADT.csc)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.csc-ADT.cellranger)/mean(c(ADT.csc,ADT.cellranger)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
+```
 
-
+```{r}
+plotData <- sapply(assays,function(x){
+        y <- GetAssayData(object, assay=x ,slot="counts")
+        y <- apply(y,1,sum)
+    })
 plotData <- plotData[order(rowMeans(plotData),decreasing=TRUE),]
 plotData <- reshape2::melt(plotData)
 colnames(plotData) <- c("Marker","Counter","value")
-ggplot(plotData,aes(x=Marker,y=value,col=Counter,group=Counter)) + geom_line() + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1))
+ggplot(plotData,aes(x=Marker,y=value,col=Counter,group=Counter)) + geom_line() + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_y_log10() + ylab("UMI count") + xlab("")
 
 ```
 
 ## Rank plots
 
 ```{r}
-data = reshape2::melt(plotData,id.vars=C("Marker"))
-colnames(data) <- c("cell","counter","value")
-data$group = object$group[data$cell]
-data$purpose = object$purpose[data$cell]
-FootPlot(object,data=data,group.by="counter",col.by="counter",wrap.by="purpose", drawBarcode=F, drawPoints=F, drawSmooth=T)
+#source("R/foot_plot.R")
 
-data = FetchData(object,vars=c("adt_HLA-DR","adtcellranger_HLA-DR","adtcsc_HLA-DR-AATAGCGAGCAAGTA"), slot="counts")
-data = reshape2::melt(as.matrix(data))
-colnames(data) <- c("cell","counter","value")
-data$group = object$group[data$cell]
-data$purpose = object$purpose[data$cell]
-data$wrap = "All"
-FootPlot(object,data=data,group.by="counter",col.by="counter",wrap.by="wrap", drawBarcode=F, drawPoints=F, drawSmooth=T)
+data.compareCounter <- FetchData(object, vars=c("nCount_ADT.kallisto", "nCount_ADT.csc", "nCount_ADT.cellranger", "supercluster", "tissue"))
+colnames(data.compareCounter)[1:3] <- c("kallisto","csc","cellranger")
+data.compareCounter <- data.compareCounter[order(data.compareCounter$kallisto, decreasing = T),]
+data.compareCounter$rank <- seq_along(data.compareCounter$kallisto)
+data.compareCounter[,1:3] <- data.compareCounter[,c("kallisto","csc","cellranger")]-data.compareCounter[,"csc"]#apply(data.compareCounter[,1:3],1,min)
+data.compareCounter$cell <- rownames(data.compareCounter)
+data.compareCounter <- data.compareCounter %>% pivot_longer(c(-cell, -supercluster, -tissue, -rank))
 
+ggplot(data.compareCounter,aes(x=rank,y=value,color=name,group=name)) + geom_line() + scale_y_log10()
+
+foot_plot(data.compareCounter$value, wrap=data.compareCounter$tissue, group=data.compareCounter$name, color=data.compareCounter$name, barcodeGroup=data.compareCounter$supercluster, draw.barcode=TRUE, draw.points=FALSE, draw.line=TRUE, trans="biexp1000")
+
+curMarker <- "CD1a"
+data.compareCounter <- FetchData(object, vars=c("supercluster","tissue"))
+data.compareCounter <- cbind(data.compareCounter,kallisto=object@assays$ADT.kallisto@counts[curMarker,],csc=object@assays$ADT.csc@counts[grep(curMarker,rownames(object[["ADT.csc"]])),], cellranger=object@assays$ADT.cellranger@counts[curMarker,])
+data.compareCounter$cell <- rownames(data.compareCounter)
+data.compareCounter <- data.compareCounter[order(data.compareCounter$kallisto, decreasing = T),]
+data.compareCounter$rank <- seq_along(data.compareCounter$kallisto)
+data.compareCounter[,c("kallisto","csc","cellranger")] <- data.compareCounter[,c("kallisto","csc","cellranger")]-data.compareCounter[,"csc"]
+
+data.compareCounter <- data.compareCounter %>% pivot_longer(c(-cell, -supercluster, -tissue, -rank))
+
+ggplot(data.compareCounter,aes(x=rank,y=value,color=name,group=name)) + geom_point(alpha=0.2) + ylim(c(-5,20))
+
+foot_plot(data.compareCounter$value, wrap=data.compareCounter$tissue, group=data.compareCounter$name, color=data.compareCounter$name, barcodeGroup=data.compareCounter$supercluster, draw.barcode=TRUE, draw.points=FALSE,draw.line=TRUE)
 ```
 
 ## Runtime
@@ -124,12 +133,29 @@ FootPlot(object,data=data,group.by="counter",col.by="counter",wrap.by="wrap", dr
 All analysis was run on the NYU Medical Center computing cluster "BigPurple" on a "fat_node" with an allocated 16 cores and 64GB memory.
 
 ```{r}
-time <- data.frame(ADT=c("kallisto"="7m54.320s", "cellranger"="348m21.313s", "csc"="173m29.692s"), HTO=c("kallisto"="4m12.157s", "cellranger"="233m7.943s", "csc"="160m40.705s"))
+time <- data.frame(ADT=c("kallisto"="7m54.320s", "cellranger"="348m21.313s", "csc"="173m29.692s"),
+                   HTO=c("kallisto"="4m12.157s", "cellranger"="233m7.943s", "csc"="160m40.705s"))
 
-time.s <- data.frame(ADT=c("kallisto"=474, "cellranger"=20901, "csc"=10410), HTO=c("kallisto"=252, "cellranger"=13988, "csc"=9641))
+time.s <- data.frame(ADT=c("kallisto"=474, "cellranger"=20901, "csc"=10410), 
+                     HTO=c("kallisto"=252, "cellranger"=13988, "csc"=9641),
+                     PBMC10k_3P=c("kallisto"=591, "cellranger"=16940, "csc"=22645),
+                     PBMC1k_3P=c("kallisto"=234, "cellranger"=4309, "csc"=3943),
+                     PBMC10k_5P=c("kallisto"=629, "cellranger"=11972, "csc"=24735))
+
+fastqsize <- c("ADT"=159520324, 
+               "HTO"=81146448, 
+               "PBMC10k_3P"=110195051, 
+               "PBMC1k_3P"=12606650, 
+               "PBMC10k_5P"=151558506)
+
+aligned <- data.frame(ADT=c("kallisto"=82527351, "cellranger"=81355365, "csc"=81355365), 
+                     HTO=c("kallisto"=65875774, "cellranger"=66540087, "csc"=66540087),
+                     PBMC10k_3P=c("kallisto"=106650656, "cellranger"=105346468, "csc"=105787248),
+                     PBMC1k_3P=c("kallisto"=11517927, "cellranger"=11371198, "csc"=11345985),
+                     PBMC10k_5P=c("kallisto"=147360481, "cellranger"=145950841, "csc"=145496165))
 
 time.s <- reshape2::melt(as.matrix(time.s))
 
-ggplot(time.s, aes(x=Var2,col=Var1,y=value,group=Var1)) + geom_line() + xlab("") + ylab("seconds") + scale_y_continuous(trans="log10") + theme_bw()
+ggplot(time.s, aes(x=fastqsize[Var2],col=Var1,y=value,group=Var1)) + geom_line() + geom_point() + xlab("bp") + ylab("seconds") + scale_y_continuous(trans="log10") + theme_bw()
 
 ```
