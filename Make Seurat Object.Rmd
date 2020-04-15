@@ -149,9 +149,9 @@ object$group <- object$sampleID
 levels(object$group) <- groups
 
 object$tissue <- factor(c("PBMC","PBMC","PBMC","PBMC","Lung","Lung","Doublet","Negative")[object$sampleID],levels=c("PBMC","Lung"))
-object$volume <- factor(c("50µl","50µl","25µl","25µl","50µl","50µl","Doublet","Negative")[object$sampleID])
-object$dilution <- factor(c("DF1","DF4","DF4","DF4","DF1","DF4","Doublet","Negative")[object$sampleID])
-object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k","Doublet","Negative")[object$sampleID])
+object$volume <- factor(c("50µl","50µl","25µl","25µl","50µl","50µl","Doublet","Negative")[object$sampleID], levels=c("50µl","25µl","Doublet","Negative"))
+object$dilution <- factor(c("DF1","DF4","DF4","DF4","DF1","DF4","Doublet","Negative")[object$sampleID], levels=c("DF1","DF4","Doublet","Negative"))
+object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k","Doublet","Negative")[object$sampleID], levels=c("1000k","500k","200k","Doublet","Negative"))
 ```
 
 ## Filter dead/dying cells
@@ -245,21 +245,21 @@ top5 <- cluster.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_logFC)
 DoHeatmap(object, features = top5$gene, slot = "data") + NoLegend() + ggplot2::scale_fill_gradientn(colors = c("blue", "white", "red"))
 
 ## COMBINE CLUSTERS TO SUPERCLUSTERS
-superclusters <- c("0"="T cells",
+superclusters <- c("0"="T/NK cells",
                    "1"="MO/MØ/DC",
-                   "2"="T cells",
-                   "3"="T cells",
-                   "4"="B cells",
-                   "5"="T cells",
-                   "6"="B cells",
+                   "2"="T/NK cells",
+                   "3"="T/NK cells",
+                   "4"="B/Plasma cells",
+                   "5"="T/NK cells",
+                   "6"="B/Plasma cells",
                    "7"="MO/MØ/DC",
-                   "8"="B cells",
+                   "8"="B/Plasma cells",
                    "9"="MO/MØ/DC",
                    "10"="MO/MØ/DC",
-                   "11"="T cells",
+                   "11"="T/NK cells",
                    "12"="Other",
                    "13"="Other",
-                   "14"="B cells",
+                   "14"="B/Plasma cells",
                    "15"="Other")
 
 object$supercluster <- factor(superclusters[as.character(Idents(object))],levels=superclusters.levels)
@@ -271,9 +271,21 @@ round(table/rowSums(table)*100,2)
 
 ## Make fine-grained clustering
 ```{r fineClusters}
-object <- FindNeighbors(object,dims = 1:30)
-object <- FindClusters(object, resolution = 1.2)
+## SEE HOW DIFFERENT GROUPS ARE LOCATED IN PRINCIPAL COMPONENTS
+#temp <- cbind(object@reductions$pca@cell.embeddings[,1:50],FetchData(object, vars=c("group","volume","dilution","tissue")))
+#temp <- temp[temp$tissue=="PBMC",]
+
+#temp2 <- temp %>% pivot_longer(c(-group,-volume,-dilution,-tissue))
+#temp3 <- temp2 %>% group_by(name, group) %>% summarise(mean=median(value))
+#ggplot(temp3,aes(x=name,y=mean,col=group)) + geom_point()
+
+object <- FindNeighbors(object,dims = c(1:30))
+object <- FindClusters(object, resolution = 1.27)
 table(Idents(object))
+
+object$fineCluster <- Idents(object)
+
+DimPlot(object, reduction = "tsne", label = TRUE) + NoLegend()
 ```
 
 ## Save Seurat object

@@ -149,8 +149,10 @@ foot_plot <- function(data,
   p <- p + scale_x_reverse(expand=c(0.01,0.01))
   
   ## Facet
-  p <- p + facet_grid(~wrap, scales="free_y")
-  
+  if(!is.null(wrap)){
+    p <- p + facet_grid(~wrap, scales="free_y")
+  }
+
   ## Layout
   p <- p + labs(col="Sample") + theme_bw() + ylab("Count") + xlab("Rank fraction") + guides(alpha=FALSE)
   p <- p + theme_get()
@@ -291,7 +293,9 @@ foot_plot_flip <- function(data,
   p <- p + scale_x_continuous(expand=c(0.01,0.01))
   
   ## Facet
-  p <- p + facet_grid(~wrap)
+  if(!is.null(wrap)){
+    p <- p + facet_grid(~wrap)
+  }
   
   ## Layout
   p <- p + labs(col="Sample") + theme_bw() + ylab("Count") + xlab("Rank fraction") + guides(alpha=FALSE)

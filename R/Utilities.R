@@ -1,28 +1,45 @@
 ## A bit of a hacked version of the foot plot for fast plotting of individual markers.
-foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, trans="biexp", legend=TRUE){
+foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue", group="dilution", color=color.dilution, trans="biexp", legend=TRUE){
   library("cowplot")
-    curMarker <- FetchData(object, vars=c(marker,"tissue","dilution", "supercluster"), slot = "counts")
-    colnames(curMarker)[1] <- "count"
-    if(!is.null(conc)){
-        curMarker$conc <- conc
-        curMarker$conc[curMarker$dilution == "DF4"] <- conc/4
-        curMarker$conc <- factor(curMarker$conc, levels=rev(sort(unique(curMarker$conc))))
-        levels(curMarker$conc) <- sprintf("%2.2fµg/mL",as.double(levels(curMarker$conc)))
+    curMarker <- FetchData(object, vars=c(marker,"supercluster",group,wrap), slot = "counts")
+    colnames(curMarker)[1:3] <- c("count","supercluster","group")
+    
+    color.manual <- color
+    if(is.null(wrap)){
+      curWrap <- NULL
+      curMarker$wrap <- 1
     } else {
-        curMarker$conc <- curMarker$dilution
+      colnames(curMarker)[4] <- "wrap"
     }
     
-    color.manual <- color.dilution
-    names(color.manual) <- levels(curMarker$conc)
+    if(group == "dilution"){
+      if(!is.null(conc)){
+        curMarker$conc <- conc
+        curMarker$conc[curMarker$group == "DF4"] <- conc/4
+        curMarker$conc <- factor(curMarker$conc, levels=rev(sort(unique(curMarker$conc))))
+        levels(curMarker$conc) <- sprintf("%2.2fug/mL",as.double(levels(curMarker$conc)))
+      } else {
+        curMarker$conc <- curMarker$group
+      }
+      
+      curMarker$group <- curMarker$conc
+      curWrap <- curMarker$wrap
+      names(color.manual) <- levels(curMarker$group)
+    }
     
-    curMarker.sum <- curMarker %>% group_by(tissue=tissue, conc=conc) %>% summarise(sum=sum(count)) %>% arrange(tissue, sum)
-    curMarker.sum.label <- curMarker.sum %>% group_by(tissue) %>% summarise(label=paste(paste0(conc,": ",sprintf("%05s",as.character(sum))),collapse="\n"))
+    
+    
+    
+    
+    
+    curMarker.sum <- curMarker %>% group_by(wrap=wrap, group=group) %>% summarise(sum=sum(count)) %>% arrange(wrap, sum)
+    curMarker.sum.label <- curMarker.sum %>% group_by(wrap) %>% summarise(label=paste(paste0(group,": ",sprintf("%05s",as.character(sum))),collapse="\n"))
     
     p.hist <- ggplot(curMarker, aes(x=count)) + 
       scale_x_continuous(trans=trans,limits=c(-1,max(curMarker$count)), expand=c(0.01,0.01)) + 
-      geom_density(aes(y=..density.. ,linetype=conc, fill=conc), alpha=0.5, bw=0.35) + 
+      geom_density(aes(y=..density.. ,linetype=group, fill=group), alpha=0.5, bw=0.35) + 
       guides(fill=guide_legend(reverse = TRUE), linetype=guide_legend(reverse = TRUE)) + 
-      scale_fill_manual(values=color.manual) + scale_y_continuous(expand=c(0,0)) + facet_wrap( ~tissue) + 
+      scale_y_continuous(expand=c(0,0)) + scale_fill_manual(values=color.manual) + 
       theme(axis.title=element_blank(),
             axis.text.y=element_blank(), 
             axis.text.x=element_blank(), 
@@ -38,11 +55,13 @@ foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, trans="biexp"
             legend.position=c(0.5,1.5), 
             legend.justification=c(0,1)) + 
       geom_text(data=curMarker.sum.label, x = Inf, y = Inf, hjust=1, vjust=1.5, aes(label=label), size=3)
-      #geom_text_repel(data=curMarker.sum, 
-      #                aes(label=paste0(group,": ",sprintf("%05s",as.character(sum)))), 
-      #                y=Inf, x=Inf, hjust=0, vjust=0, direction="y", segment.alpha=0, seed=114, size=3)
-
-    p.foot <- foot_plot_flip(curMarker$count, group=curMarker$conc, linetype=curMarker$conc, wrap=curMarker$tissue, barcodeGroup=curMarker$supercluster, barcode.stepSize=0.4, draw.points = F, draw.barcode = T, draw.line = T, barcode.refGroups=levels(curMarker$conc)[1], trans=trans) + 
+    
+    if(!is.null(wrap)) p.hist <- p.hist + facet_wrap( ~wrap)
+    #geom_text_repel(data=curMarker.sum, 
+    #                aes(label=paste0(group,": ",sprintf("%05s",as.character(sum)))), 
+    #                y=Inf, x=Inf, hjust=0, vjust=0, direction="y", segment.alpha=0, seed=114, size=3)
+    
+    p.foot <- foot_plot_flip(curMarker$count, group=curMarker$group, linetype=curMarker$group, wrap=curWrap, barcodeGroup=curMarker$supercluster, barcode.stepSize=0.4, draw.points = F, draw.barcode = T, draw.line = T, barcode.refGroups=levels(curMarker$group)[1], trans=trans) + 
       theme(strip.text = element_blank(), 
             plot.margin = unit(c(0,0.3,0,0),"cm"), 
             legend.direction = "vertical",
@@ -53,17 +72,17 @@ foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, trans="biexp"
             axis.title=element_blank(),
             axis.text.y=element_blank()) + 
       guides(linetype=F, col=guide_legend(override.aes = list(shape = 15)), group=F) + ylab("UMI count")
-      #geom_text_repel(data=curMarker.sum, aes(label=paste0(group,": ",sprintf("%06s",as.character(sum)))), y=-ggforce::trans_reverser(trans)$transform(max(curMarker$count)*0.5), x=-Inf, xlim=c(0.02,1), hjust=1, vjust=-1, direction="y", segment.alpha=0, seed=114, size=3)
-      
+    #geom_text_repel(data=curMarker.sum, aes(label=paste0(group,": ",sprintf("%06s",as.character(sum)))), y=-ggforce::trans_reverser(trans)$transform(max(curMarker$count)*0.5), x=-Inf, xlim=c(0.02,1), hjust=1, vjust=-1, direction="y", segment.alpha=0, seed=114, size=3)
+    
     
     if(legend == FALSE){
       p.foot <- p.foot + theme(legend.position="none")
     }
-
+    
     if(!is.null(gates)){
-        p.foot <- p.foot + geom_vline(data=gates,aes(xintercept=gate), col="red", size=0.25, alpha=0.5, linetype="dashed")
+      p.foot <- p.foot + geom_vline(data=gates,aes(xintercept=gate), col="red", size=0.25, alpha=0.5, linetype="dashed")
     }
-
+    
     p.hist.legend <- get_legend(p.hist)
     #p.hist <- p.hist + theme(legend.position="none")
     p.foot.legend <- get_legend(p.foot)

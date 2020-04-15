@@ -16,7 +16,12 @@ options(stringsAsFactors=FALSE)
 set.seed(114)
 require("Seurat")
 require("tidyverse")
-theme_set(theme_bw())
+theme_set(theme_bw() + 
+          theme(
+            axis.text.x=element_text(angle=45, hjust=1), 
+            panel.grid.minor = element_blank(), 
+            strip.background=element_blank(), 
+            strip.text=element_text(face="bold", size=10)))
 require("ggrepel")
 
 data10XADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_A1/outs/raw_feature_bc_matrix"
@@ -26,6 +31,8 @@ dataCSCADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_
 source("R/Utilities.R")
 ## Load predefined color schemes
 source("R/color.R")
+
+outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
 ```
 
 ## Load Seurat object
@@ -34,7 +41,7 @@ source("R/color.R")
 object <- readRDS(file="data/5P-CITE-seq_Titration.rds")
 
 ## Subset object to focus on samples with dilution factor 1
-object <- subset(object, subset=dilution==1)
+#object <- subset(object, subset=dilution=="DF1")
 ```
 
 ## Load in alternative counters
@@ -128,6 +135,48 @@ ggplot(data.compareCounter,aes(x=rank,y=value,color=name,group=name)) + geom_poi
 foot_plot(data.compareCounter$value, wrap=data.compareCounter$tissue, group=data.compareCounter$name, color=data.compareCounter$name, barcodeGroup=data.compareCounter$supercluster, draw.barcode=TRUE, draw.points=FALSE,draw.line=TRUE)
 ```
 
+## UMI per marker per cell correlations
+
+```{r}
+assays <- c("ADT.kallisto","ADT.cellranger","ADT.csc")
+names(assays) <- assays
+
+ADTdata <- lapply(assays, function(x)GetAssayData(object, assay=x, slot="counts"))
+rownames(ADTdata$ADT.csc) <- rownames(ADTdata$ADT.kallisto)
+ADTdata <- lapply(ADTdata, function(x) as.data.frame(x) %>% mutate(marker=rownames(x)) %>% pivot_longer(-marker))
+
+ADTdata.DF <- ADTdata %>% purrr::reduce(inner_join, by=c("marker","name"), )
+colnames(ADTdata.DF)[-c(1:2)] <- assays
+head(ADTdata.DF)
+
+dim(ADTdata.DF)
+ADTdata.DF <- ADTdata.DF[apply(ADTdata.DF[,-c(1:2)],1,sum) > 0,]
+dim(ADTdata.DF)
+
+p.methodCorr <- list()
+
+p.methodCorr[["KvsR"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.cellranger+1)) + 
+    labs(x="Kallisto-bustools KITE", y="Cellranger featureOnly")
+    
+p.methodCorr[["KvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.csc+1)) + 
+    labs(x="Kallisto-bustools KITE", y="CITE-seq Count")
+
+p.methodCorr[["RvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.cellranger+1, y=ADT.csc+1)) + 
+    labs(x="Cellranger featureOnly", y="CITE-seq Count")
+
+curLimit <- 4050
+p.methodCorrAdd <- lapply(p.methodCorr, function(x){
+    x + geom_point(aes(color=marker), alpha=0.25) + 
+    geom_abline(slope=1, linetype="dashed", col="black", size=1, alpha=0.25) + 
+    scale_x_log10(limits=c(1,curLimit)) + scale_y_log10(limits=c(1,curLimit)) + 
+    annotation_logticks() + 
+    theme(aspect.ratio = 1, legend.position="none")
+})
+
+UMIsum <- colSums(ADTdata.DF[,-c(1:2)])
+
+```
+
 ## Runtime
 
 All analysis was run on the NYU Medical Center computing cluster "BigPurple" on a "fat_node" with an allocated 16 cores and 64GB memory.
@@ -148,14 +197,60 @@ fastqsize <- c("ADT"=159520324,
                "PBMC1k_3P"=12606650, 
                "PBMC10k_5P"=151558506)
 
+dataset.order <- c("ADT"=2, 
+               "HTO"=1, 
+               "PBMC10k_3P"=3, 
+               "PBMC1k_3P"=0, 
+               "PBMC10k_5P"=4)
+
 aligned <- data.frame(ADT=c("kallisto"=82527351, "cellranger"=81355365, "csc"=81355365), 
                      HTO=c("kallisto"=65875774, "cellranger"=66540087, "csc"=66540087),
                      PBMC10k_3P=c("kallisto"=106650656, "cellranger"=105346468, "csc"=105787248),
                      PBMC1k_3P=c("kallisto"=11517927, "cellranger"=11371198, "csc"=11345985),
                      PBMC10k_5P=c("kallisto"=147360481, "cellranger"=145950841, "csc"=145496165))
 
-time.s <- reshape2::melt(as.matrix(time.s))
+time.s.long <- time.s %>% mutate(method=rownames(time.s)) %>% pivot_longer(-method)
+datasets <- data.frame(fastqsize)
+datasets <- datasets %>% mutate(Dataset=rownames(datasets))
 
-ggplot(time.s, aes(x=fastqsize[Var2],col=Var1,y=value,group=Var1)) + geom_line() + geom_point() + xlab("bp") + ylab("seconds") + scale_y_continuous(trans="log10") + theme_bw()
+methods <- c("cellranger"="CellRanger featureOnly",
+             "csc"="CITE-seq-Count",
+             "kallisto"="Kallisto-bustools KITE")
+
+p.runtime <- ggplot(time.s.long, aes(x=(fastqsize[name]/10^6),col=methods[method],y=value/60,group=method)) + 
+    geom_line() + 
+    geom_point() + 
+    geom_vline(data=datasets,aes(xintercept=fastqsize/10^6), linetype="dashed", alpha=0.25) + 
+    geom_text(data=datasets, inherit.aes=FALSE, aes(label=Dataset,y=30,x=fastqsize/10^6), alpha=0.75, angle=90) +    
+    scale_x_continuous(expand=c(0.1,0,0.1,0)) + 
+    scale_y_continuous(trans="log10") + 
+    annotation_logticks(sides = "l") + 
+    labs(x=bquote("Total reads ("~10^6~")"), y="Runtime (Minutes)") + 
+    theme(legend.position="none")
+
+aligned.long <- aligned %>% mutate(method=rownames(aligned)) %>% pivot_longer(-method)
+aligned.long$name <- factor(aligned.long$name, levels=names(dataset.order)[order(dataset.order)])
+
+p.alignedReads <- ggplot(aligned.long, aes(x=name,fill=methods[method],y=value/10^6)) + 
+    geom_bar(stat="identity", position="dodge", col="black") + 
+    scale_y_continuous(expand=c(0,0,0.05,0)) + 
+    labs(y=bquote("Assigned reads ("~10^6~")"), x="Dataset") + 
+    theme(panel.border=element_blank(), 
+          panel.grid=element_blank(), 
+          axis.line=element_line(), 
+          axis.title.x=element_blank(),
+          legend.position=c(0,1), 
+          legend.justification=c(-0.1,1), 
+          legend.title=element_blank())
+
+library(cowplot)
+ABC <- plot_grid(p.alignedReads, p.runtime, labels=c("A", "B"), vjust=1, hjust=-0.5, align = "h", axis="tb", rel_widths = c(4,5))
+DEF <- plot_grid(plotlist=p.methodCorrAdd, align="h", axis="tb", labels=c("D","E","F"), nrow=1, hjust=-0.5, vjust=1) 
+
+plotFinal <- cowplot::plot_grid(ABC, DEF, align="v", axis="lr", ncol=1, rel_heights=c(3,2))
+
+png(file=file.path(outdir,"Figure 5.png"), width=8, height=7, units = "in", res=300)
+plotFinal
+dev.off()
 
 ```

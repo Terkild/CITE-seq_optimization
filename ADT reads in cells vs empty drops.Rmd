@@ -1,0 +1,325 @@
+---
+title: "CITE-seq optimization - Make Seurat Object"
+author: "Terkild Brink Buus"
+date: "30/3/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set()
+options(stringsAsFactors=FALSE)
+```
+
+## Load libraries etc.
+
+```{r}
+set.seed(114)
+require("Seurat", quietly=T)
+require("tidyverse", quietly=T)
+theme_set(theme_bw() + 
+          theme(
+            axis.text.x=element_text(angle=45, hjust=1), 
+            panel.grid.minor = element_blank(), 
+            strip.background=element_blank(), 
+            strip.text=element_text(face="bold", size=10)))
+
+require("Matrix", quietly=T)
+require("DropletUtils", quietly=T)
+
+## Load helper functions (ggplot themes, biexp transformation etc.)
+source("R/Utilities.R")
+
+## Load predefined color schemes
+source("R/color.R")
+
+outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
+```
+# TITRATION DATASET
+## Load GEX data
+
+From kallisto-bustools output. Modified from https://github.com/Sarah145/scRNA_pre_process 
+
+```{r loadGEX}
+
+t2g.file <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger.txt"
+kallistobusDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/counts_unfiltered"
+
+raw_mtx <- as(t(readMM(file.path(kallistobusDir,"cells_x_genes.mtx"))), 'CsparseMatrix') # load mtx and transpose it
+rownames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.genes.txt"), sep = '\t', header = F)[,1] # attach genes
+colnames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.barcodes.txt"), header = F, sep = '\t')[,1] # attach barcodes
+
+t2g <- unique(read.csv(t2g.file, sep = '\t', header=F)[,2:3]) # load t2g file
+t2g <- data.frame(t2g[,2], row.names = t2g[,1])
+gene_sym <- t2g[as.character(rownames(raw_mtx)),1] # get symbols for gene ids
+
+# Which rows have same gene symbol (but different Ensembl gene id)
+gene_sym.duplicated <- which(gene_sym %in% gene_sym[which(duplicated(gene_sym))])
+
+# Which genes are have duplicated entries
+gene_sym.duplicated.unique <- unique(gene_sym[gene_sym.duplicated])
+
+# Make placeholder matrix for duplicate gene symbols
+raw_mtx_dedup <- Matrix(data=0,nrow=length(gene_sym.duplicated.unique),ncol=ncol(raw_mtx))
+rownames(raw_mtx_dedup) <- gene_sym.duplicated.unique
+colnames(raw_mtx_dedup) <- colnames(raw_mtx)
+
+# Combine counts from genes with same gene symbol (but different Ensembl gene id)
+for(i in seq_along(gene_sym.duplicated)){
+  curGene <- gene_sym[gene_sym.duplicated[i]]
+  curRow <- gene_sym.duplicated.unique == curGene
+  raw_mtx_dedup[curRow,] <- raw_mtx_dedup[curRow,] + raw_mtx[gene_sym.duplicated[i],]
+}
+
+# Merged combined counts duplicate gene symbol with matrix of unique gene symbol counts
+raw_mtx <- raw_mtx[-gene_sym.duplicated,]
+rownames(raw_mtx) <- gene_sym[-gene_sym.duplicated]
+raw_mtx <- rbind(raw_mtx,raw_mtx_dedup)
+
+tot_counts <- Matrix::colSums(raw_mtx)
+summary(tot_counts)
+bc_rank <- DropletUtils::barcodeRanks(raw_mtx, lower = 10)
+gex.inflection <- S4Vectors::metadata(bc_rank)[["inflection"]]
+gex.aboveInf <- names(which(tot_counts > gex.inflection))
+head(gex.aboveInf)
+knee_plot(bc_rank)
+
+kallisto.GEX <- raw_mtx
+```
+
+## Load ADT data from titration dataset
+
+```{r loadADT}
+
+kallistobusDirADT <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered"
+data10XADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_A1/outs/raw_feature_bc_matrix"
+dataCSCADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/umi_count"
+dataCSCADTDir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/uncorrected_cells/dense_umis.tsv"
+
+res_mat <- read_count_output(kallistobusDirADT, name = "cells_x_genes")
+dim(res_mat)
+tot_counts <- Matrix::colSums(res_mat)
+summary(tot_counts)
+bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
+
+knee_plot(bc_rank)
+kallisto.ADT <- res_mat
+
+cellranger.ADT <- Read10X(data.dir=data10XADTDir)
+
+CSC.ADT <- Read10X(data.dir=dataCSCADTDir, gene.column=1)
+CSC.ADT.dense <- read.table(file=dataCSCADTDir.dense)
+CSC.ADT <- cbind(CSC.ADT,CSC.ADT.dense)
+CSC.ADT <- CSC.ADT[rownames(CSC.ADT) != "unmapped",]
+
+```
+
+## Load HTO data from titration dataset
+
+```{r loadHTO}
+
+kallistobusDirHTO <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered"
+data10XHTODir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_H1/outs/raw_feature_bc_matrix"
+dataCSCHTODir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO/umi_count"
+dataCSCHTODir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO/uncorrected_cells/dense_umis.tsv"
+
+res_mat <- read_count_output(kallistobusDirHTO, name = "cells_x_genes")
+dim(res_mat)
+tot_counts <- Matrix::colSums(res_mat)
+summary(tot_counts)
+bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
+
+knee_plot(bc_rank)
+kallisto.HTO <- res_mat
+
+cellranger.HTO <- Read10X(data.dir=data10XHTODir)
+
+CSC.HTO <- Read10X(data.dir=dataCSCHTODir, gene.column=1)
+CSC.HTO.dense <- read.table(file=dataCSCHTODir.dense)
+CSC.HTO <- cbind(CSC.HTO,CSC.HTO.dense)
+CSC.HTO <- CSC.HTO[rownames(CSC.HTO) != "unmapped",]
+
+```
+
+## Determine ADT counts in cells vs empty drops.
+
+Based on GEX inflection point
+
+```{r}
+
+ADT.totalUMI <- c("kallisto"=sum(kallisto.ADT),"csc"=sum(CSC.ADT),"cellranger"=sum(cellranger.ADT))
+ADT.UMIincell <- c("kallisto"=sum(kallisto.ADT[,gex.aboveInf]),"csc"=sum(CSC.ADT[,intersect(colnames(CSC.ADT),gex.aboveInf)]),"cellranger"=sum(cellranger.ADT[,gex.aboveInf]))
+ADT.UMIindrops <- ADT.totalUMI - ADT.UMIincell
+
+ADT <- data.frame(method=names(ADT.totalUMI),Cell=ADT.UMIincell,EmptyDrop=ADT.UMIindrops)
+ADT$dataset <- "ADT"
+
+HTO.totalUMI <- c("kallisto"=sum(kallisto.HTO),"csc"=sum(CSC.HTO),"cellranger"=sum(cellranger.HTO))
+HTO.UMIincell <- c("kallisto"=sum(kallisto.HTO[,gex.aboveInf]),"csc"=sum(CSC.HTO[,intersect(colnames(CSC.HTO),gex.aboveInf)]),"cellranger"=sum(cellranger.HTO[,gex.aboveInf]))
+HTO.UMIindrops <- HTO.totalUMI - HTO.UMIincell
+
+HTO <- data.frame(method=names(HTO.totalUMI),Cell=HTO.UMIincell,EmptyDrop=HTO.UMIindrops)
+HTO$dataset <- "HTO"
+
+plotData <- rbind(ADT,HTO)
+plotData <- plotData %>% pivot_longer(c(-method,-dataset))
+plotData$name <- factor(plotData$name, levels=c("EmptyDrop","Cell"))
+
+ggplot(plotData,aes(x=method,y=value/10^6,fill=method, alpha=name)) + geom_bar(stat="identity", color="black") + scale_alpha_manual(values=c("EmptyDrop"=0.5,"Cell"=1)) + facet_wrap(~dataset, scales="free_y")
+
+``` 
+
+## Concentration bias in empty droplets?
+
+Do antibodies used in high concentration dominate the empty drops?
+
+ADT
+
+```{r}
+abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
+rownames(abpanel) <- abpanel$Marker
+
+
+ADT.matrix <- kallisto.ADT
+ADT.matrix.marker <- rownames(ADT.matrix)
+ADT.matrix.conc <- abpanel[ADT.matrix.marker,"conc_µg_per_mL"]
+markerUMI <- apply(ADT.matrix,1,sum)
+markerUMI.inCell <- apply(ADT.matrix[,gex.aboveInf],1,sum)
+markerUMI.inCell.freq <- markerUMI.inCell/sum(markerUMI.inCell)
+markerUMI.inDrop <- markerUMI-markerUMI.inCell
+markerUMI.inDrop.freq <- markerUMI.inDrop/sum(markerUMI.inDrop)
+
+plotData <- rbind(data.frame(count=markerUMI.inCell, freq=markerUMI.inCell.freq, subset="Cell", marker=names(markerUMI.inCell.freq)), data.frame(count=markerUMI.inDrop, freq=markerUMI.inDrop.freq, subset="EmptyDrop", marker=names(markerUMI.inDrop.freq)))
+plotData$conc <- abpanel[plotData$marker,"conc_µg_per_mL"]
+plotData$marker <- factor(plotData$marker, levels=plotData$marker[order(plotData$conc[plotData$subset=="EmptyDrop"],plotData$freq[plotData$subset=="EmptyDrop"])])
+
+scaleFUN <- function(x) sprintf("%.2f", x)
+## MAYBE COMPARE ROW SUMS FROM READS vs UMI FROM CSC.
+
+plotData <- plotData[order(plotData$marker, decreasing=TRUE),]
+plotData$highlight <- 0
+#plotData$highlight[which(plotData$marker == plotData$marker[plotData$freq >= 0.05] & plotData$subset == "EmptyDrop")]
+highfreq <- which(plotData$marker %in% plotData$marker[plotData$freq >= 0.05])
+plotData$highlight[c(highfreq)] <- 1
+plotData$label <- plotData$marker
+max.label <- plotData[plotData$freq >= 0.05,] %>% group_by(marker) %>% summarize(subset.max=subset[which.max(freq)])
+
+plotData$label[(paste(plotData$marker,plotData$subset) %in% paste(max.label$marker,max.label$subset.max))==FALSE | plotData$freq < 0.05] <- NA
+
+plotData$cummulativeFreq <- 0
+plotData$cummulativeFreq[plotData$subset=="EmptyDrop"] <- cumsum(plotData$freq[plotData$subset=="EmptyDrop"])
+plotData$cummulativeFreq[plotData$subset=="Cell"] <- cumsum(plotData$freq[plotData$subset=="Cell"])
+p.gradient.hb.width <- 0.25
+
+p.gradient.hb <- ggplot(plotData, aes(x=factor(as.character(subset), levels=c("EmptyDrop","Cell")), y=freq, fill=conc, group=marker)) + geom_bar(stat="identity", position="stack", col=alpha("black",0.5), width=p.gradient.hb.width) + scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + scale_y_continuous(expand=c(0,0,0,0), position="right") + scale_x_discrete(expand=c(0,0,0,0)) + labs(fill="µg/mL") + theme(panel.grid=element_blank(), axis.title.y=element_blank(), axis.text.x=element_text(angle=0, hjust=0.5, vjust=0.5)) + coord_flip(clip="off") + labs(y="UMI frequency (cells versus empty drops)")
+p.gradient.hb2 <- p.gradient.hb + geom_text(aes(y=cummulativeFreq-(freq/2), label=label), na.rm=TRUE, vjust=0.5, hjust=0.5,  angle=0, size=2.5, fontface="bold") + theme(plot.margin=unit(c(0,0.5,2,0),"cm")) + guides(alpha=FALSE)
+
+plotData$xval <- (2-p.gradient.hb.width/2)
+plotData$xval[plotData$subset == "EmptyDrop"] <- (1+p.gradient.hb.width/2)
+plotData.poly2 <- plotData
+plotData.poly2$cummulativeFreq <- plotData.poly2$cummulativeFreq-plotData.poly2$freq
+plotData.poly <- rbind(plotData.poly2[order(plotData.poly2$marker, -plotData.poly2$xval, -plotData.poly2$cummulativeFreq, decreasing=TRUE),],plotData[order(plotData$marker, -plotData$xval, -plotData$cummulativeFreq, decreasing=FALSE),])
+
+plotData.poly[plotData.poly$marker == "TCRgd",]
+
+p.gradient.hb4 <- p.gradient.hb2 + geom_polygon(data=plotData.poly, aes(x=xval,y=cummulativeFreq, group=marker, fill=conc, size=factor(highlight), col=factor(highlight)), alpha=0.5) + scale_size_manual(values=c("0"=0.25, "1"=0.5)) + scale_color_manual(values=c("0"=alpha("black",0.1), "1"=alpha("black",1)))
+
+p.gradient.hb4
+
+plotData$marker.rev <- factor(as.character(plotData$marker), levels=rev(levels(plotData$marker)))
+
+p.barplot <- ggplot(plotData, aes(x=marker.rev, y=count/10^6, fill=subset)) + geom_bar(stat="identity", position="dodge", color="black", width=0.65) + scale_x_discrete(expand=c(0, 0.5)) + scale_fill_manual(values=c("black","lightgrey")) + facet_grid(~-conc, scales="free_x", space="free_x", switch="x") + theme(panel.border=element_blank(), panel.grid=element_blank(), axis.line=element_line(), axis.title.x=element_blank(), panel.spacing=unit(0.1,"cm"), legend.position=c(1,1), legend.justification=c(1,1), strip.placement="outside", strip.text=element_blank(), legend.text.align=0) + scale_y_continuous(expand=c(0.005,0.005,0,0)) + ggnewscale::new_scale_fill() +  geom_rect(aes(xmin=-Inf,xmax=Inf,ymin=-0.030000,ymax=-0.010000,fill=conc), col="black") + scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + geom_hline(yintercept=0, col="black") + labs(y=bquote("UMI count ("~10^6~")"), fill="µg/mL")
+
+#ragg::agg_png
+png(filename=file.path(outdir,"EmptyDrops.png"), width=10, height=7, units = "in", res=300)
+cowplot::plot_grid(p.barplot, p.gradient.hb4 + theme(legend.position="none"), ncol=1, rel_heights=c(3,1), align="v", axis="lr", labels=c("A", "B"), hjust=0, vjust=1)
+dev.off()
+
+```
+
+ADT
+
+```{r}
+abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
+rownames(abpanel) <- abpanel$Marker
+
+markerUMI <- apply(kallisto.HTO,1,sum)
+markerUMI.inCell <- apply(kallisto.HTO[,gex.aboveInf],1,sum)
+markerUMI.inCell.freq <- markerUMI.inCell/sum(markerUMI.inCell)
+markerUMI.inDrop <- markerUMI-markerUMI.inCell
+markerUMI.inDrop.freq <- markerUMI.inDrop/sum(markerUMI.inDrop)
+
+plotData <- rbind(data.frame(count=markerUMI.inCell, freq=markerUMI.inCell.freq, subset="Cell", marker=names(markerUMI.inCell.freq)), data.frame(count=markerUMI.inDrop, freq=markerUMI.inDrop.freq, subset="EmptyDrop", marker=names(markerUMI.inDrop.freq)))
+plotData$conc <- 10
+plotData$marker <- factor(plotData$marker)
+plotData$marker <- factor(as.character(plotData$marker), levels=rev(levels(plotData$marker)))
+
+scaleFUN <- function(x) sprintf("%.2f", x)
+
+plotData <- plotData[order(plotData$marker, decreasing=TRUE),]
+plotData$highlight <- 0
+#plotData$highlight[which(plotData$marker == plotData$marker[plotData$freq >= 0.05] & plotData$subset == "EmptyDrop")]
+highfreq <- which(plotData$marker %in% plotData$marker[plotData$freq >= 0.05])
+plotData$highlight[c(highfreq)] <- 1
+plotData$label <- plotData$marker
+max.label <- plotData[plotData$freq >= 0.05,] %>% group_by(marker) %>% summarize(subset.max=subset[which.max(freq)])
+
+plotData$label[(paste(plotData$marker,plotData$subset) %in% paste(max.label$marker,max.label$subset.max))==FALSE | plotData$freq < 0.05] <- NA
+
+plotData$cummulativeFreq <- 0
+plotData$cummulativeFreq[plotData$subset=="EmptyDrop"] <- cumsum(plotData$freq[plotData$subset=="EmptyDrop"])
+plotData$cummulativeFreq[plotData$subset=="Cell"] <- cumsum(plotData$freq[plotData$subset=="Cell"])
+p.gradient.hb.width <- 0.25
+
+p.gradient.hb <- ggplot(plotData, aes(x=factor(as.character(subset), levels=c("EmptyDrop","Cell")), y=freq, fill=marker, group=marker)) + geom_bar(stat="identity", position="stack", col=alpha("black",0.5), width=p.gradient.hb.width) + scale_y_continuous(expand=c(0,0,0,0), position="right") + scale_x_discrete(expand=c(0,0,0,0)) + labs(fill="µg/mL") + theme(panel.grid=element_blank(), axis.title.y=element_blank(), axis.text.x=element_text(angle=0, hjust=0.5, vjust=0.5)) + coord_flip(clip="off") + labs(y="UMI frequency (cells versus empty drops)")
+p.gradient.hb2 <- p.gradient.hb + geom_text(aes(y=cummulativeFreq-(freq/2), label=label), na.rm=TRUE, vjust=0.5, hjust=0.5,  angle=0, size=2.5, fontface="bold") + theme(plot.margin=unit(c(0,0.5,2,0),"cm")) + guides(alpha=FALSE)
+
+plotData$xval <- (2-p.gradient.hb.width/2)
+plotData$xval[plotData$subset == "EmptyDrop"] <- (1+p.gradient.hb.width/2)
+plotData.poly2 <- plotData
+plotData.poly2$cummulativeFreq <- plotData.poly2$cummulativeFreq-plotData.poly2$freq
+plotData.poly <- rbind(plotData.poly2[order(plotData.poly2$marker, -plotData.poly2$xval, -plotData.poly2$cummulativeFreq, decreasing=TRUE),],plotData[order(plotData$marker, -plotData$xval, -plotData$cummulativeFreq, decreasing=FALSE),])
+
+plotData.poly[plotData.poly$marker == "TCRgd",]
+
+p.HTO.gradient.hb4 <- p.gradient.hb2 + geom_polygon(data=plotData.poly, aes(x=xval,y=cummulativeFreq, group=marker, fill=marker, size=factor(highlight), col=factor(highlight)), alpha=0.5) + scale_size_manual(values=c("0"=0.25, "1"=0.5)) + scale_color_manual(values=c("0"=alpha("black",0.1), "1"=alpha("black",1)))
+
+p.HTO.gradient.hb4
+
+plotData$marker.rev <- factor(as.character(plotData$marker), levels=rev(levels(plotData$marker)))
+
+p.HTO.barplot <- ggplot(plotData, aes(x=marker.rev, y=count/10^6, fill=subset)) + geom_bar(stat="identity", position="dodge", color="black", width=0.65) + scale_x_discrete(expand=c(0, 0.5)) + scale_fill_manual(values=c("black","lightgrey")) + facet_grid(~marker.rev, scales="free_x", space="free_x", switch="x") + theme(panel.border=element_blank(), panel.grid=element_blank(), axis.line=element_line(), axis.title.x=element_blank(), panel.spacing=unit(0.1,"cm"), legend.position=c(1,1), legend.justification=c(1,1), strip.placement="outside", strip.text=element_blank(), legend.text.align=0) + scale_y_continuous(expand=c(0.005,0.005,0,0)) + ggnewscale::new_scale_fill() +  geom_rect(aes(xmin=-Inf,xmax=Inf,ymin=-0.18000,ymax=-0.060000,fill=marker.rev), col="black") + geom_hline(yintercept=0, col="black") + labs(y=bquote("UMI count ("~10^6~")"), fill="µg/mL") + guides(fill=F)
+
+#ragg::agg_png
+png(filename=file.path(outdir,"EmptyDrops_HTO.png"), width=10, height=7, units = "in", res=300)
+cowplot::plot_grid(p.barplot, p.HTO.barplot + theme(legend.position="none"), p.gradient.hb4 + theme(legend.position="none"), p.HTO.gradient.hb4 + theme(legend.position="none", axis.text.y=element_blank(), axis.title.x=element_blank()), ncol=2,  rel_heights=c(3,1), rel_widths=c(4,1), align="hv", axis="tblr", labels=c("A", "C", "B", "D"), hjust=0, vjust=1)
+dev.off()
+
+```
+
+## COMPARE ROW SUMS FROM READS vs UMI FROM CSC.
+
+Are reads evenly distributed among marker UMIs?
+
+```{r}
+
+dataCSCADTDir.reads <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/read_count"
+
+CSC.ADT.reads <- Read10X(data.dir=dataCSCADTDir.reads, gene.column=1)
+CSC.ADT.reads <- CSC.ADT.reads[rownames(CSC.ADT.reads) != "unmapped",]
+
+reads <- apply(CSC.ADT.reads,1,sum)
+UMIs <- apply(CSC.ADT[,colnames(CSC.ADT.reads)],1,sum)
+
+plotData <- data.frame(marker=gsub("(.*)\\-.*","\\1",names(reads)),reads=reads,UMIs=UMIs)
+
+ggplot(plotData, aes(x=UMIs, y=reads)) + geom_point() + geom_smooth(method="lm") + scale_x_log10() + scale_y_log10()
+
+reads.perCell <- as.data.frame(CSC.ADT.reads[,intersect(colnames(CSC.ADT.reads),gex.aboveInf)]) %>% mutate(marker=gsub("(.*)\\-.*","\\1",rownames(CSC.ADT.reads))) %>% pivot_longer(-marker)
+
+UMIs.perCell <- as.data.frame(CSC.ADT[,intersect(colnames(CSC.ADT.reads),gex.aboveInf)]) %>% mutate(marker=gsub("(.*)\\-.*","\\1",rownames(CSC.ADT))) %>% pivot_longer(-marker)
+
+plotData <- data.frame(marker=UMIs.perCell$marker,reads=reads.perCell$value,UMIs=UMIs.perCell$value)
+
+ggplot(plotData, aes(x=UMIs, y=reads)) + geom_point(aes(color=abpanel[as.character(marker),"conc_µg_per_mL"])) + geom_smooth(method="lm") + scale_x_log10() + scale_y_log10() + scale_color_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10))
+
+```

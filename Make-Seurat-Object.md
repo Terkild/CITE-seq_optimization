@@ -146,12 +146,11 @@ kallistobusDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/c
 kallistobusDirADT <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered"
 kallistobusDirHTO <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered"
 
-superclusters.levels <- c("T cells","MO/MØ/DC","B cells","Other")
-color.supercluster <- RColorBrewer::brewer.pal(4,"Dark2")
-names(color.supercluster) <- superclusters.levels
-
 ## Load helper functions (ggplot themes, biexp transformation etc.)
 source("R/Utilities.R")
+
+## Load predefined color schemes
+source("R/color.R")
 ```
 
 ## Load GEX data
@@ -378,9 +377,9 @@ object$group <- object$sampleID
 levels(object$group) <- groups
 
 object$tissue <- factor(c("PBMC","PBMC","PBMC","PBMC","Lung","Lung","Doublet","Negative")[object$sampleID],levels=c("PBMC","Lung"))
-object$volume <- factor(c("50µl","50µl","25µl","25µl","50µl","50µl","Doublet","Negative")[object$sampleID])
-object$dilution <- factor(c("1","4","4","4","1","4","Doublet","Negative")[object$sampleID])
-object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k","Doublet","Negative")[object$sampleID])
+object$volume <- factor(c("50µl","50µl","25µl","25µl","50µl","50µl","Doublet","Negative")[object$sampleID], levels=c("50µl","25µl","Doublet","Negative"))
+object$dilution <- factor(c("DF1","DF4","DF4","DF4","DF1","DF4","Doublet","Negative")[object$sampleID], levels=c("DF1","DF4","Doublet","Negative"))
+object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k","Doublet","Negative")[object$sampleID], levels=c("1000k","500k","200k","Doublet","Negative"))
 ```
 
 ## Filter dead/dying cells
@@ -504,26 +503,26 @@ object <- RunUMAP(object,dims=1:30)
     ## To use Python UMAP via reticulate, set umap.method to 'umap-learn' and metric to 'correlation'
     ## This message will be shown once per session
 
-    ## 15:27:07 UMAP embedding parameters a = 0.9922 b = 1.112
+    ## 13:36:45 UMAP embedding parameters a = 0.9922 b = 1.112
 
-    ## 15:27:07 Read 13338 rows and found 30 numeric columns
+    ## 13:36:45 Read 13338 rows and found 30 numeric columns
 
-    ## 15:27:07 Using Annoy for neighbor search, n_neighbors = 30
+    ## 13:36:45 Using Annoy for neighbor search, n_neighbors = 30
 
-    ## 15:27:07 Building Annoy index with metric = cosine, n_trees = 50
+    ## 13:36:45 Building Annoy index with metric = cosine, n_trees = 50
 
     ## 0%   10   20   30   40   50   60   70   80   90   100%
 
     ## [----|----|----|----|----|----|----|----|----|----|
 
     ## **************************************************|
-    ## 15:27:10 Writing NN index file to temp file C:\Users\Terkild\AppData\Local\Temp\RtmpkP1Kfa\file23c159547fe
-    ## 15:27:10 Searching Annoy index using 1 thread, search_k = 3000
-    ## 15:27:14 Annoy recall = 100%
-    ## 15:27:15 Commencing smooth kNN distance calibration using 1 thread
-    ## 15:27:17 Initializing from normalized Laplacian + noise
-    ## 15:27:18 Commencing optimization for 200 epochs, with 630674 positive edges
-    ## 15:27:33 Optimization finished
+    ## 13:36:49 Writing NN index file to temp file C:\Users\Terkild\AppData\Local\Temp\RtmpSyJcLo\file2e0866f51080
+    ## 13:36:49 Searching Annoy index using 1 thread, search_k = 3000
+    ## 13:36:53 Annoy recall = 100%
+    ## 13:36:53 Commencing smooth kNN distance calibration using 1 thread
+    ## 13:36:55 Initializing from normalized Laplacian + noise
+    ## 13:36:56 Commencing optimization for 200 epochs, with 630674 positive edges
+    ## 13:37:12 Optimization finished
 
 ``` r
 DimPlot(object, group.by="tissue", reduction="tsne")
@@ -626,26 +625,26 @@ DoHeatmap(object, features = top5$gene, slot = "data") + NoLegend() + ggplot2::s
 
 ``` r
 ## COMBINE CLUSTERS TO SUPERCLUSTERS
-superclusters <- c("0"="T cells",
+superclusters <- c("0"="T/NK cells",
                    "1"="MO/MØ/DC",
-                   "2"="T cells",
-                   "3"="T cells",
-                   "4"="B cells",
-                   "5"="T cells",
-                   "6"="B cells",
+                   "2"="T/NK cells",
+                   "3"="T/NK cells",
+                   "4"="B/Plasma cells",
+                   "5"="T/NK cells",
+                   "6"="B/Plasma cells",
                    "7"="MO/MØ/DC",
-                   "8"="B cells",
+                   "8"="B/Plasma cells",
                    "9"="MO/MØ/DC",
                    "10"="MO/MØ/DC",
-                   "11"="T cells",
+                   "11"="T/NK cells",
                    "12"="Other",
                    "13"="Other",
-                   "14"="B cells",
+                   "14"="B/Plasma cells",
                    "15"="Other")
 
 object$supercluster <- factor(superclusters[as.character(Idents(object))],levels=superclusters.levels)
 
-DimPlot(object, group.by="supercluster")
+DimPlot(object, group.by="supercluster", reduction="tsne")
 ```
 
 ![](Make-Seurat-Object_files/figure-gfm/superclustering-5.png)<!-- -->
@@ -656,15 +655,65 @@ round(table/rowSums(table)*100,2)
 ```
 
     ##                    
-    ##                     T cells MO/MØ/DC B cells Other
-    ##   PBMC_50ul_1_1000k   53.38    37.43    7.66  1.54
-    ##   PBMC_50ul_4_1000k   54.36    37.10    7.57  0.97
-    ##   PBMC_25ul_4_1000k   55.33    35.06    8.05  1.55
-    ##   PBMC_25ul_4_200k    45.50    46.45    6.55  1.50
-    ##   Lung_50ul_1_500k    60.61     9.65   25.75  4.00
-    ##   Lung_50ul_4_500k    64.15     9.28   22.40  4.16
-    ##   Doublet                                         
+    ##                     T/NK cells MO/MØ/DC B/Plasma cells Other
+    ##   PBMC_50ul_1_1000k      53.38    37.43           7.66  1.54
+    ##   PBMC_50ul_4_1000k      54.36    37.10           7.57  0.97
+    ##   PBMC_25ul_4_1000k      55.33    35.06           8.05  1.55
+    ##   PBMC_25ul_4_200k       45.50    46.45           6.55  1.50
+    ##   Lung_50ul_1_500k       60.61     9.65          25.75  4.00
+    ##   Lung_50ul_4_500k       64.15     9.28          22.40  4.16
+    ##   Doublet                                                   
     ##   Negative
+
+## Make fine-grained clustering
+
+``` r
+## SEE HOW DIFFERENT GROUPS ARE LOCATED IN PRINCIPAL COMPONENTS
+#temp <- cbind(object@reductions$pca@cell.embeddings[,1:50],FetchData(object, vars=c("group","volume","dilution","tissue")))
+#temp <- temp[temp$tissue=="PBMC",]
+
+#temp2 <- temp %>% pivot_longer(c(-group,-volume,-dilution,-tissue))
+#temp3 <- temp2 %>% group_by(name, group) %>% summarise(mean=median(value))
+#ggplot(temp3,aes(x=name,y=mean,col=group)) + geom_point()
+
+object <- FindNeighbors(object,dims = c(1:30))
+```
+
+    ## Computing nearest neighbor graph
+
+    ## Computing SNN
+
+``` r
+object <- FindClusters(object, resolution = 1.27)
+```
+
+    ## Modularity Optimizer version 1.3.0 by Ludo Waltman and Nees Jan van Eck
+    ## 
+    ## Number of nodes: 13338
+    ## Number of edges: 584866
+    ## 
+    ## Running Louvain algorithm...
+    ## Maximum modularity in 10 random starts: 0.8244
+    ## Number of communities: 25
+    ## Elapsed time: 2 seconds
+
+``` r
+table(Idents(object))
+```
+
+    ## 
+    ##    0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15 
+    ## 2803 1196 1193 1111 1071  892  696  650  623  452  414  331  286  280  239  227 
+    ##   16   17   18   19   20   21   22   23   24 
+    ##  196  188  134  113   71   55   41   39   37
+
+``` r
+object$fineCluster <- Idents(object)
+
+DimPlot(object, reduction = "tsne", label = TRUE) + NoLegend()
+```
+
+![](Make-Seurat-Object_files/figure-gfm/fineClusters-1.png)<!-- -->
 
 ## Save Seurat object
 
