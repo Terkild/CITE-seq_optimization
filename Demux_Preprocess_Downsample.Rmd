@@ -1,0 +1,322 @@
+---
+title: "CITE-seq optimization - Demux, Pre-process and downsample"
+author: "Terkild Brink Buus"
+date: "30/3/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set()
+options(stringsAsFactors=FALSE)
+```
+
+## Load libraries etc.
+
+```{r}
+set.seed(114)
+require("Seurat", quietly=T)
+require("tidyverse", quietly=T)
+library("Matrix", quietly=T)
+library("DropletUtils", quietly=T)
+
+driveLetter <-"D:/"
+t2g.file <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger.txt")
+kallistobusDir <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/counts_unfiltered")
+kallistobusDirADT <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered")
+kallistobusDirHTO <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered")
+
+## Load helper functions (ggplot themes, biexp transformation etc.)
+source("R/Utilities.R")
+
+## Load predefined color schemes
+source("R/color.R")
+```
+
+## Load GEX data
+
+From kallisto-bustools output. Modified from https://github.com/Sarah145/scRNA_pre_process 
+
+```{r loadGEX}
+raw_mtx <- as(t(readMM(file.path(kallistobusDir,"cells_x_genes.mtx"))), 'CsparseMatrix') # load mtx and transpose it
+rownames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.genes.txt"), sep = '\t', header = F)[,1] # attach genes
+colnames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.barcodes.txt"), header = F, sep = '\t')[,1] # attach barcodes
+
+t2g <- unique(read.csv(t2g.file, sep = '\t', header=F)[,2:3]) # load t2g file
+t2g <- data.frame(t2g[,2], row.names = t2g[,1])
+gene_sym <- t2g[as.character(rownames(raw_mtx)),1] # get symbols for gene ids
+
+# Which rows have same gene symbol (but different Ensembl gene id)
+gene_sym.duplicated <- which(gene_sym %in% gene_sym[which(duplicated(gene_sym))])
+
+# Which genes are have duplicated entries
+gene_sym.duplicated.unique <- unique(gene_sym[gene_sym.duplicated])
+
+# Make placeholder matrix for duplicate gene symbols
+raw_mtx_dedup <- Matrix(data=0,nrow=length(gene_sym.duplicated.unique),ncol=ncol(raw_mtx))
+rownames(raw_mtx_dedup) <- gene_sym.duplicated.unique
+colnames(raw_mtx_dedup) <- colnames(raw_mtx)
+
+# Combine counts from genes with same gene symbol (but different Ensembl gene id)
+for(i in seq_along(gene_sym.duplicated)){
+  curGene <- gene_sym[gene_sym.duplicated[i]]
+  curRow <- gene_sym.duplicated.unique == curGene
+  raw_mtx_dedup[curRow,] <- raw_mtx_dedup[curRow,] + raw_mtx[gene_sym.duplicated[i],]
+}
+
+# Merged combined counts duplicate gene symbol with matrix of unique gene symbol counts
+raw_mtx <- raw_mtx[-gene_sym.duplicated,]
+rownames(raw_mtx) <- gene_sym[-gene_sym.duplicated]
+raw_mtx <- rbind(raw_mtx,raw_mtx_dedup)
+
+tot_counts <- Matrix::colSums(raw_mtx)
+summary(tot_counts)
+bc_rank <- DropletUtils::barcodeRanks(raw_mtx, lower = 10)
+
+knee_plot(bc_rank)
+
+kallisto.GEX <- raw_mtx
+```
+
+## Load Kallisto HTO data
+
+```{r loadHTO}
+res_mat <- read_count_output(kallistobusDirHTO, name = "cells_x_genes")
+dim(res_mat)
+tot_counts <- Matrix::colSums(res_mat)
+summary(tot_counts)
+bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
+
+knee_plot(bc_rank)
+kallisto.HTO <- res_mat
+```
+
+## Load Kallisto ADT data
+
+```{r loadADT}
+res_mat <- read_count_output(kallistobusDirADT, name = "cells_x_genes")
+dim(res_mat)
+tot_counts <- Matrix::colSums(res_mat)
+summary(tot_counts)
+bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
+
+knee_plot(bc_rank)
+kallisto.ADT <- res_mat
+```
+
+## Demultiplex by HTO
+
+Use Seurat MULTIseqDemux to demultiplex samples (by their hashing antibody signal = HTO)
+
+```{r demux}
+object <- CreateSeuratObject(counts = kallisto.HTO, assay="HTO.kallisto")
+object <- NormalizeData(object, assay = "HTO.kallisto", normalization.method = "CLR")
+
+## Assure the matrices are in the same barcode-space
+commonDrops <- Reduce("intersect",x=list(colnames(kallisto.HTO),colnames(kallisto.ADT),colnames(kallisto.GEX)))
+
+length(commonDrops)
+
+object <- subset(object, cells=commonDrops)
+object[["ADT.kallisto"]] <- CreateAssayObject(counts=kallisto.ADT[,commonDrops])
+object[["RNA.kallisto"]] <- CreateAssayObject(counts=kallisto.GEX[,commonDrops])
+Key(object[["RNA.kallisto"]]) <- "rna_"
+Key(object[["ADT.kallisto"]]) <- "adt_"
+Key(object[["HTO.kallisto"]]) <- "hto_"
+
+
+## MULTIseqDemux seems better when using unfiltered input (including empty droplets)
+object <- MULTIseqDemux(object, assay="HTO.kallisto")
+
+RidgePlot(object, assay = "HTO.kallisto", features = rownames(object[["HTO.kallisto"]]))
+table(object$MULTI_ID)
+
+object$sampleID <- object$MULTI_ID
+
+object <- CalculateBarcodeInflections(object,barcode.column="nCount_HTO.kallisto",group.column="sampleID",threshold.low=1000)
+Seurat::BarcodeInflectionsPlot(object) + scale_x_continuous(trans="log10")
+
+object.empty <- subset(object, subset=sampleID == "Negative")
+object <- subset(object, subset=sampleID %in% c(1:6))
+```
+
+## Assign annotation to each cell
+
+```{r annotation}
+## Rename groups to meaningful names
+groups <- c("PBMC_50ul_1_1000k","PBMC_50ul_4_1000k","PBMC_25ul_4_1000k","PBMC_25ul_4_200k","Lung_50ul_1_500k","Lung_50ul_4_500k","Doublet","Negative")
+object$group <- object$sampleID
+
+## Keep ordering of groups for best plotting
+levels(object$group) <- groups
+
+object$tissue <- factor(c("PBMC","PBMC","PBMC","PBMC","Lung","Lung","Doublet","Negative")[object$sampleID],levels=c("PBMC","Lung"))
+object$volume <- factor(c("50µl","50µl","25µl","25µl","50µl","50µl","Doublet","Negative")[object$sampleID], levels=c("50µl","25µl","Doublet","Negative"))
+object$dilution <- factor(c("DF1","DF4","DF4","DF4","DF1","DF4","Doublet","Negative")[object$sampleID], levels=c("DF1","DF4","Doublet","Negative"))
+object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k","Doublet","Negative")[object$sampleID], levels=c("1000k","500k","200k","Doublet","Negative"))
+```
+
+## Filter dead/dying cells
+
+Based on mitochondrial reads and number of detected genes. Cutoff set to 15% MT and at least 60 expressed genes by visual inspection.
+
+```{r filter}
+DefaultAssay(object) <- "RNA.kallisto"
+object[["percent.mt"]] <- PercentageFeatureSet(object, pattern = "^MT-")
+#object[["percent.mt"]][is.nan(object[["percent.mt"]][,1]),1] <- 100
+
+cutoff.percent.mt <- 15
+cutoff.nFeature <- 60
+FeatureScatter(object, feature1 = "percent.mt", feature2 = "nFeature_RNA.kallisto") + ggplot2::geom_vline(xintercept=cutoff.percent.mt,linetype="dashed") + scale_y_continuous(trans="log10") + ggplot2::geom_hline(yintercept=cutoff.nFeature,linetype="dashed")
+
+table(object[["percent.mt"]]<cutoff.percent.mt & object[["nFeature_RNA.kallisto"]]>cutoff.nFeature, object$sampleID)
+
+object <- subset(object, subset = percent.mt <= cutoff.percent.mt & nFeature_RNA.kallisto > cutoff.nFeature)
+```
+
+## Filter doublets
+
+Doublet rate calculated from: https://satijalab.org/costpercell at 20,000 cells and 6 multiplexed samples
+
+```{r}
+library(scDblFinder)
+
+sce <- as.SingleCellExperiment(object)
+sce <- scDblFinder(sce, nfeatures=1000, dbr=0.038)
+table(sce$scDblFinder.class)
+
+object$scDblFinder.class <- sce$scDblFinder.class
+object$scDblFinder.score <- sce$scDblFinder.score
+object$scDblFinder.ratio <- sce$scDblFinder.ratio
+object$scDblFinder.weighted <- sce$scDblFinder.weighted
+
+table(object$scDblFinder.class)
+rm(sce)
+  
+FeatureScatter(object, feature1 = "nCount_RNA.kallisto", feature2 = "nFeature_RNA.kallisto", group.by="scDblFinder.class", cols=c(alpha("red",0.5),alpha("blue",0.05))) + ggplot2::geom_vline(xintercept=cutoff.percent.mt,linetype="dashed") + scale_y_continuous(trans="log10") + ggplot2::geom_hline(yintercept=cutoff.nFeature,linetype="dashed")
+
+object <- subset(object, subset=scDblFinder.class=="singlet")
+
+```
+
+
+## Make DSB normalization
+
+https://mattpm.github.io/dsb/ 
+
+```{r dsbnorm}
+#devtools::install_github(repo = 'MattPM/dsb')
+library(dsb)
+
+neg_adt_matrix = GetAssayData(object.empty, assay = "ADT.kallisto", slot = 'counts') %>% as.matrix()
+positive_adt_matrix = GetAssayData(object, assay = "ADT.kallisto", slot = 'counts') %>% as.matrix()
+isotypes = c("IgG2A","IgG1")
+
+normalized_matrix_individual <- positive_adt_matrix
+
+for(i in c(1:6)){
+  curCells <- which(object$sampleID == i)
+  normalized_matrix_individual[,curCells] = DSBNormalizeProtein(cell_protein_matrix = positive_adt_matrix[,curCells],
+                                        empty_drop_matrix = neg_adt_matrix,
+                                        use.isotype.control = TRUE,
+                                        isotype.control.name.vec = isotypes)
+}
+
+object = SetAssayData(object=object, assay="ADT.kallisto", slot="data", new.data = normalized_matrix_individual)
+
+plotData <- as.data.frame(normalized_matrix_individual)
+plotData$Marker <- rownames(plotData)
+plotData <- reshape2::melt(plotData, id.vars=c("Marker"))
+colnames(plotData) <- c("Marker","Cell","value")
+ggplot(plotData,aes(x=value,y=Marker,fill=object$group[Cell])) + ggridges::geom_density_ridges(alpha=0.5, scale=3, rel_min_height = 0.01) + xlim(-5,30) + facet_grid(~object$group[Cell])
+
+```
+
+## Preprocess data
+
+Run standard Seurat preprocessing on RNA modality.
+
+```{r preprocessRNA}
+
+object <- NormalizeData(object)
+object <- FindVariableFeatures(object)
+object <- ScaleData(object)
+object <- RunPCA(object, verbose = FALSE)
+object <- FindNeighbors(object, dims = 1:30)
+object <- FindClusters(object, resolution = 0.3)
+object <- RunTSNE(object,dims=1:30)
+object <- RunUMAP(object,dims=1:30)
+
+DimPlot(object, group.by="tissue", reduction="tsne")
+DimPlot(object, group.by="group", reduction="tsne")
+DimPlot(object, label=TRUE, reduction="tsne")
+
+```
+
+
+## Label and merge clusters into "superclusters"
+
+To make the poulations less complex and for easier visualization, we merged the clusters into major cell types
+
+```{r superclustering}
+## LINEAGE MARKERS FOR CLUSTERLABELLING
+ADTplots <- FeaturePlot(object, features=c("adt_CD1a","adt_CD3","adt_CD4","adt_CD8","adt_CD11b","adt_CD14","adt_CD19","adt_CD56","adt_HLA-DR","adt_EpCAM"), label=TRUE, reduction="tsne", min.cutoff=4, col=c("lightgrey","red"), combine=FALSE)
+ADTplots <- lapply(ADTplots,FUN=function(x)x+NoLegend())
+CombinePlots(ADTplots,ncol=5)
+FeaturePlot(object, features=c("CD3D","TRAC"), label=TRUE, reduction="tsne", min.cutoff=1.3, col=c("lightgrey","red"), combine=FALSE)
+
+
+
+library("dplyr")
+cluster.markers <- FindAllMarkers(object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+top5 <- cluster.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_logFC)
+DoHeatmap(object, features = top5$gene, slot = "data") + NoLegend() + ggplot2::scale_fill_gradientn(colors = c("blue", "white", "red"))
+
+## COMBINE CLUSTERS TO SUPERCLUSTERS
+superclusters <- c("0"="T/NK cells",
+                   "1"="MO/MØ/DC",
+                   "2"="T/NK cells",
+                   "3"="T/NK cells",
+                   "4"="B/Plasma cells",
+                   "5"="T/NK cells",
+                   "6"="B/Plasma cells",
+                   "7"="MO/MØ/DC",
+                   "8"="B/Plasma cells",
+                   "9"="MO/MØ/DC",
+                   "10"="MO/MØ/DC",
+                   "11"="T/NK cells",
+                   "12"="Other",
+                   "13"="Other",
+                   "14"="B/Plasma cells",
+                   "15"="Other")
+
+object$supercluster <- factor(superclusters[as.character(Idents(object))],levels=superclusters.levels)
+
+DimPlot(object, group.by="supercluster", reduction="tsne")
+table <- t(table(object$supercluster,object$group))
+round(table/rowSums(table)*100,2)
+```
+
+## Make fine-grained clustering
+```{r fineClusters}
+## SEE HOW DIFFERENT GROUPS ARE LOCATED IN PRINCIPAL COMPONENTS
+#temp <- cbind(object@reductions$pca@cell.embeddings[,1:50],FetchData(object, vars=c("group","volume","dilution","tissue")))
+#temp <- temp[temp$tissue=="PBMC",]
+
+#temp2 <- temp %>% pivot_longer(c(-group,-volume,-dilution,-tissue))
+#temp3 <- temp2 %>% group_by(name, group) %>% summarise(mean=median(value))
+#ggplot(temp3,aes(x=name,y=mean,col=group)) + geom_point()
+
+object <- FindNeighbors(object,dims = c(1:30))
+object <- FindClusters(object, resolution = 1.27)
+table(Idents(object))
+
+object$fineCluster <- Idents(object)
+
+DimPlot(object, reduction = "tsne", label = TRUE) + NoLegend()
+```
+
+## Save Seurat object
+
+```{r save}
+saveRDS(object,file="data/5P-CITE-seq_Titration.rds")
+```
