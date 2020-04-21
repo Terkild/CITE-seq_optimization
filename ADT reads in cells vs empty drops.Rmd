@@ -16,15 +16,11 @@ options(stringsAsFactors=FALSE)
 set.seed(114)
 require("Seurat", quietly=T)
 require("tidyverse", quietly=T)
-theme_set(theme_bw() + 
-          theme(
-            axis.text.x=element_text(angle=45, hjust=1), 
-            panel.grid.minor = element_blank(), 
-            strip.background=element_blank(), 
-            strip.text=element_text(face="bold", size=10)))
-
 require("Matrix", quietly=T)
 require("DropletUtils", quietly=T)
+
+## Load ggplot theme and defaults
+source("R/ggplot_settings.R")
 
 ## Load helper functions (ggplot themes, biexp transformation etc.)
 source("R/Utilities.R")
@@ -32,6 +28,7 @@ source("R/Utilities.R")
 ## Load predefined color schemes
 source("R/color.R")
 
+data.drive <- "F:"
 outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
 ```
 # TITRATION DATASET
@@ -75,13 +72,14 @@ raw_mtx <- raw_mtx[-gene_sym.duplicated,]
 rownames(raw_mtx) <- gene_sym[-gene_sym.duplicated]
 raw_mtx <- rbind(raw_mtx,raw_mtx_dedup)
 
+#raw_mtx <- kallisto.GEX
 tot_counts <- Matrix::colSums(raw_mtx)
 summary(tot_counts)
 bc_rank <- DropletUtils::barcodeRanks(raw_mtx, lower = 10)
 gex.inflection <- S4Vectors::metadata(bc_rank)[["inflection"]]
 gex.aboveInf <- names(which(tot_counts > gex.inflection))
 head(gex.aboveInf)
-knee_plot(bc_rank)
+knee_plot_auc(bc_rank)
 
 kallisto.GEX <- raw_mtx
 ```
@@ -95,14 +93,15 @@ data10XADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_A1/outs
 dataCSCADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/umi_count"
 dataCSCADTDir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/uncorrected_cells/dense_umis.tsv"
 
-res_mat <- read_count_output(kallistobusDirADT, name = "cells_x_genes")
-dim(res_mat)
-tot_counts <- Matrix::colSums(res_mat)
-summary(tot_counts)
-bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
+ADT.res_mat <- read_count_output(kallistobusDirADT, name = "cells_x_genes")
+dim(ADT.res_mat)
+ADT.tot_counts <- Matrix::colSums(ADT.res_mat)
+summary(ADT.tot_counts)
+ADT.bc_rank <- DropletUtils::barcodeRanks(ADT.res_mat, lower = 10)
 
-knee_plot(bc_rank)
-kallisto.ADT <- res_mat
+knee_plot_highlight(ADT.bc_rank, highlight=gex.aboveInf)
+
+kallisto.ADT <- ADT.res_mat
 
 cellranger.ADT <- Read10X(data.dir=data10XADTDir)
 
@@ -110,6 +109,14 @@ CSC.ADT <- Read10X(data.dir=dataCSCADTDir, gene.column=1)
 CSC.ADT.dense <- read.table(file=dataCSCADTDir.dense)
 CSC.ADT <- cbind(CSC.ADT,CSC.ADT.dense)
 CSC.ADT <- CSC.ADT[rownames(CSC.ADT) != "unmapped",]
+
+dataCSCADTnocorrectDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT_nocorrect/umi_count"
+dataCSCADTnocorrectDir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT_nocorrect/uncorrected_cells/dense_umis.tsv"
+
+CSC.ADT.uncorrected <- Read10X(data.dir=dataCSCADTnocorrectDir, gene.column=1)
+CSC.ADT.uncorrected.dense <- read.table(file=dataCSCADTnocorrectDir.dense)
+CSC.ADT.uncorrected <- cbind(CSC.ADT.uncorrected,CSC.ADT.uncorrected.dense)
+CSC.ADT.uncorrected <- CSC.ADT.uncorrected[rownames(CSC.ADT.uncorrected) != "unmapped",]
 
 ```
 
@@ -122,14 +129,14 @@ data10XHTODir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_H1/outs
 dataCSCHTODir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO/umi_count"
 dataCSCHTODir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO/uncorrected_cells/dense_umis.tsv"
 
-res_mat <- read_count_output(kallistobusDirHTO, name = "cells_x_genes")
-dim(res_mat)
-tot_counts <- Matrix::colSums(res_mat)
-summary(tot_counts)
-bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
+HTO.res_mat <- read_count_output(kallistobusDirHTO, name = "cells_x_genes")
+dim(HTO.res_mat)
+HTO.tot_counts <- Matrix::colSums(HTO.res_mat)
+HTO.bc_rank <- DropletUtils::barcodeRanks(HTO.res_mat, lower = 10)
 
-knee_plot(bc_rank)
-kallisto.HTO <- res_mat
+#knee_plot(bc_rank)
+knee_plot_highlight(HTO.bc_rank, highlight=gex.aboveInf)
+kallisto.HTO <- HTO.res_mat
 
 cellranger.HTO <- Read10X(data.dir=data10XHTODir)
 
@@ -137,6 +144,14 @@ CSC.HTO <- Read10X(data.dir=dataCSCHTODir, gene.column=1)
 CSC.HTO.dense <- read.table(file=dataCSCHTODir.dense)
 CSC.HTO <- cbind(CSC.HTO,CSC.HTO.dense)
 CSC.HTO <- CSC.HTO[rownames(CSC.HTO) != "unmapped",]
+
+dataCSCHTOnocorrectDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO_nocorrect/umi_count"
+dataCSCHTOnocorrectDir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO_nocorrect/uncorrected_cells/dense_umis.tsv"
+
+CSC.HTO.uncorrected <- Read10X(data.dir=dataCSCHTOnocorrectDir, gene.column=1)
+CSC.HTO.uncorrected.dense <- read.table(file=dataCSCHTOnocorrectDir.dense)
+CSC.HTO.uncorrected <- cbind(CSC.HTO.uncorrected,CSC.HTO.uncorrected.dense)
+CSC.HTO.uncorrected <- CSC.HTO.uncorrected[rownames(CSC.HTO.uncorrected) != "unmapped",]
 
 ```
 
@@ -146,15 +161,15 @@ Based on GEX inflection point
 
 ```{r}
 
-ADT.totalUMI <- c("kallisto"=sum(kallisto.ADT),"csc"=sum(CSC.ADT),"cellranger"=sum(cellranger.ADT))
-ADT.UMIincell <- c("kallisto"=sum(kallisto.ADT[,gex.aboveInf]),"csc"=sum(CSC.ADT[,intersect(colnames(CSC.ADT),gex.aboveInf)]),"cellranger"=sum(cellranger.ADT[,gex.aboveInf]))
+ADT.totalUMI <- c("kallisto"=sum(kallisto.ADT),"csc"=sum(CSC.ADT),"csc_nc"=sum(CSC.ADT.uncorrected),"cellranger"=sum(cellranger.ADT))
+ADT.UMIincell <- c("kallisto"=sum(kallisto.ADT[,gex.aboveInf]),"csc"=sum(CSC.ADT[,intersect(colnames(CSC.ADT),gex.aboveInf)]),"csc_nc"=sum(CSC.ADT.uncorrected[,intersect(colnames(CSC.ADT.uncorrected),gex.aboveInf)]),"cellranger"=sum(cellranger.ADT[,gex.aboveInf]))
 ADT.UMIindrops <- ADT.totalUMI - ADT.UMIincell
 
 ADT <- data.frame(method=names(ADT.totalUMI),Cell=ADT.UMIincell,EmptyDrop=ADT.UMIindrops)
 ADT$dataset <- "ADT"
 
-HTO.totalUMI <- c("kallisto"=sum(kallisto.HTO),"csc"=sum(CSC.HTO),"cellranger"=sum(cellranger.HTO))
-HTO.UMIincell <- c("kallisto"=sum(kallisto.HTO[,gex.aboveInf]),"csc"=sum(CSC.HTO[,intersect(colnames(CSC.HTO),gex.aboveInf)]),"cellranger"=sum(cellranger.HTO[,gex.aboveInf]))
+HTO.totalUMI <- c("kallisto"=sum(kallisto.HTO),"csc"=sum(CSC.HTO),"csc_nc"=sum(CSC.HTO.uncorrected),"cellranger"=sum(cellranger.HTO))
+HTO.UMIincell <- c("kallisto"=sum(kallisto.HTO[,gex.aboveInf]),"csc"=sum(CSC.HTO[,intersect(colnames(CSC.HTO),gex.aboveInf)]),"csc_nc"=sum(CSC.HTO.uncorrected[,intersect(colnames(CSC.HTO.uncorrected),gex.aboveInf)]),"cellranger"=sum(cellranger.HTO[,gex.aboveInf]))
 HTO.UMIindrops <- HTO.totalUMI - HTO.UMIincell
 
 HTO <- data.frame(method=names(HTO.totalUMI),Cell=HTO.UMIincell,EmptyDrop=HTO.UMIindrops)
@@ -210,8 +225,18 @@ plotData$cummulativeFreq[plotData$subset=="EmptyDrop"] <- cumsum(plotData$freq[p
 plotData$cummulativeFreq[plotData$subset=="Cell"] <- cumsum(plotData$freq[plotData$subset=="Cell"])
 p.gradient.hb.width <- 0.25
 
-p.gradient.hb <- ggplot(plotData, aes(x=factor(as.character(subset), levels=c("EmptyDrop","Cell")), y=freq, fill=conc, group=marker)) + geom_bar(stat="identity", position="stack", col=alpha("black",0.5), width=p.gradient.hb.width) + scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + scale_y_continuous(expand=c(0,0,0,0), position="right") + scale_x_discrete(expand=c(0,0,0,0)) + labs(fill="µg/mL") + theme(panel.grid=element_blank(), axis.title.y=element_blank(), axis.text.x=element_text(angle=0, hjust=0.5, vjust=0.5)) + coord_flip(clip="off") + labs(y="UMI frequency (cells versus empty drops)")
-p.gradient.hb2 <- p.gradient.hb + geom_text(aes(y=cummulativeFreq-(freq/2), label=label), na.rm=TRUE, vjust=0.5, hjust=0.5,  angle=0, size=2.5, fontface="bold") + theme(plot.margin=unit(c(0,0.5,2,0),"cm")) + guides(alpha=FALSE)
+p.gradient.hb <- ggplot(plotData, aes(x=factor(as.character(subset), levels=c("EmptyDrop","Cell")), y=freq, fill=conc, group=marker)) + 
+  geom_bar(stat="identity", position="stack", col=alpha("black",0.5), width=p.gradient.hb.width) + 
+  scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + 
+  scale_y_continuous(expand=c(0,0,0,0), position="right") + 
+  scale_x_discrete(expand=c(0,0,0,0)) + 
+  labs(fill="µg/mL") + 
+  theme(panel.grid=element_blank(), axis.title.y=element_blank(), axis.text.x=element_text(angle=0, hjust=0.5, vjust=0.5)) + coord_flip(clip="off") + labs(y="UMI frequency (cells versus empty drops)")
+
+p.gradient.hb2 <- p.gradient.hb + 
+  geom_text(aes(y=cummulativeFreq-(freq/2), label=label), na.rm=TRUE, vjust=0.5, hjust=0.5,  angle=0, size=1.5, fontface="bold") + 
+  theme(plot.margin=unit(c(0,0.2,0.2,0),"cm")) + 
+  guides(alpha=FALSE)
 
 plotData$xval <- (2-p.gradient.hb.width/2)
 plotData$xval[plotData$subset == "EmptyDrop"] <- (1+p.gradient.hb.width/2)
@@ -221,22 +246,49 @@ plotData.poly <- rbind(plotData.poly2[order(plotData.poly2$marker, -plotData.pol
 
 plotData.poly[plotData.poly$marker == "TCRgd",]
 
-p.gradient.hb4 <- p.gradient.hb2 + geom_polygon(data=plotData.poly, aes(x=xval,y=cummulativeFreq, group=marker, fill=conc, size=factor(highlight), col=factor(highlight)), alpha=0.5) + scale_size_manual(values=c("0"=0.25, "1"=0.5)) + scale_color_manual(values=c("0"=alpha("black",0.1), "1"=alpha("black",1)))
+p.gradient.hb4 <- p.gradient.hb2 + 
+  geom_polygon(data=plotData.poly, aes(x=xval,y=cummulativeFreq, group=marker, fill=conc, size=factor(highlight), col=factor(highlight)), alpha=0.5) + 
+  scale_size_manual(values=c("0"=0.15, "1"=0.25)) + 
+  scale_color_manual(values=c("0"=alpha("black",0.1), "1"=alpha("black",1)))
 
 p.gradient.hb4
 
 plotData$marker.rev <- factor(as.character(plotData$marker), levels=rev(levels(plotData$marker)))
 
-p.barplot <- ggplot(plotData, aes(x=marker.rev, y=count/10^6, fill=subset)) + geom_bar(stat="identity", position="dodge", color="black", width=0.65) + scale_x_discrete(expand=c(0, 0.5)) + scale_fill_manual(values=c("black","lightgrey")) + facet_grid(~-conc, scales="free_x", space="free_x", switch="x") + theme(panel.border=element_blank(), panel.grid=element_blank(), axis.line=element_line(), axis.title.x=element_blank(), panel.spacing=unit(0.1,"cm"), legend.position=c(1,1), legend.justification=c(1,1), strip.placement="outside", strip.text=element_blank(), legend.text.align=0) + scale_y_continuous(expand=c(0.005,0.005,0,0)) + ggnewscale::new_scale_fill() +  geom_rect(aes(xmin=-Inf,xmax=Inf,ymin=-0.030000,ymax=-0.010000,fill=conc), col="black") + scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + geom_hline(yintercept=0, col="black") + labs(y=bquote("UMI count ("~10^6~")"), fill="µg/mL")
+p.barplot <- ggplot(plotData, aes(x=marker.rev, y=count/10^6, fill=subset)) + 
+  geom_bar(stat="identity", position="dodge", color="black", width=0.65) + 
+  geom_hline(yintercept=0, col="black") + 
+  scale_fill_manual(values=c("black","lightgrey")) + 
+  ggnewscale::new_scale_fill() + 
+  geom_rect(aes(xmin=-Inf,xmax=Inf,ymin=-0.050000,ymax=-0.010000,fill=conc), col="black") + 
+  scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + 
+  scale_x_discrete(expand=c(0, 0.5)) + 
+  scale_y_continuous(expand=c(0.005,0.005,0,0)) + 
+  facet_grid(~-conc, scales="free_x", space="free_x", switch="x") +
+  labs(y=bquote("UMI count ("~10^6~")"), fill="µg/mL") + 
+  theme(panel.border=element_blank(), 
+        panel.grid=element_blank(), 
+        panel.spacing=unit(0.5,"mm"),
+        axis.line=element_line(), 
+        axis.title.x=element_blank(), 
+        strip.placement="outside", 
+        strip.text=element_blank(), 
+        legend.position=c(1,1), 
+        legend.justification=c(1,1),
+        #legend.direction="horizontal",
+        legend.text.align=0, 
+        legend.key.width=unit(0.3,"cm"), 
+        legend.key.height=unit(0.4,"cm"), 
+        legend.text=element_text(size=unit(5,"pt")))
 
 #ragg::agg_png
-png(filename=file.path(outdir,"EmptyDrops.png"), width=10, height=7, units = "in", res=300)
-cowplot::plot_grid(p.barplot, p.gradient.hb4 + theme(legend.position="none"), ncol=1, rel_heights=c(3,1), align="v", axis="lr", labels=c("A", "B"), hjust=0, vjust=1)
+png(file=file.path(outdir,"Figure 5.png"), width=figure.width.full, height=3.2, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
+cowplot::plot_grid(p.barplot, p.gradient.hb4 + theme(legend.position="none"), ncol=1, rel_heights=c(3.2,1), align="v", axis="lr", labels=c("A", "B"), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust)
 dev.off()
 
 ```
 
-ADT
+HTO
 
 ```{r}
 abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
@@ -321,5 +373,211 @@ UMIs.perCell <- as.data.frame(CSC.ADT[,intersect(colnames(CSC.ADT.reads),gex.abo
 plotData <- data.frame(marker=UMIs.perCell$marker,reads=reads.perCell$value,UMIs=UMIs.perCell$value)
 
 ggplot(plotData, aes(x=UMIs, y=reads)) + geom_point(aes(color=abpanel[as.character(marker),"conc_µg_per_mL"])) + geom_smooth(method="lm") + scale_x_log10() + scale_y_log10() + scale_color_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10))
+
+```
+
+## Load GEX data from 10X datasets
+
+```{r}
+data.10X.dir <- file.path(data.drive,"data","10XDatasets")
+data.10X.datasets <- c("PBMC_1k_GEXFeature_v3","PBMC_10k_GEXFeature_v3","PBMC_GEXFeatureVDJ_v1")
+data.10X.datasets.dir <- file.path(data.10X.dir,data.10X.datasets)
+names(data.10X.datasets.dir) <- data.10X.datasets
+
+## Load gene expression data to distinguish cell-containing droplets from empty-droplets
+data.10X.datasets.gex.dir <- file.path(data.10X.datasets.dir,"raw_feature_bc_matrix")
+names(data.10X.datasets.gex.dir) <- data.10X.datasets
+data.10X.datasets.gex <- lapply(data.10X.datasets.gex.dir, function(dir)Read10X(data.dir=dir)$`Gene Expression`)
+data.10X.datasets.gex.bc_rank <- lapply(data.10X.datasets.gex,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
+data.10X.datasets.gex.tot_counts <- lapply(data.10X.datasets.gex,function(raw_mtx)tot_counts <- Matrix::colSums(raw_mtx))
+
+## Get inflection points
+data.10X.datasets.gex.inflection <- sapply(data.10X.datasets.gex.bc_rank,function(bc_rank)S4Vectors::metadata(bc_rank)[["inflection"]])
+
+## Extract barcodes above inflection point
+data.10X.datasets.gex.aboveInf <- sapply(data.10X.datasets, function(dataset)names(which(data.10X.datasets.gex.tot_counts[[dataset]] > data.10X.datasets.gex.inflection[dataset])))
+
+data.10X.datasets.gex.aboveInf.index <- sapply(data.10X.datasets, function(dataset)which(data.10X.datasets.gex.tot_counts[[dataset]] > data.10X.datasets.gex.inflection[dataset]))
+
+identical(colnames(data.10X.datasets.gex[[1]])[data.10X.datasets.gex.aboveInf.index[[1]]],data.10X.datasets.gex.aboveInf[[1]])
+
+sapply(data.10X.datasets.gex.aboveInf,length)
+
+## Draw knee plots
+knee_plots <- lapply(data.10X.datasets.gex.bc_rank,function(x)knee_plot_auc(x)+theme(legend.position="none"))
+
+#rm(data.10X.datasets.gex)
+#rm(data.10X.datasets.gex.bc_rank)
+#rm(data.10X.datasets.gex.tot_counts)
+
+```
+
+
+## Load Kallisto ADT data
+
+```{r}
+## 10Xv3 chemestry needs to translate feature barcodes to GEX barcodes to be compatible
+## Can be downloaded here: https://github.com/10XGenomics/cellranger/blob/master/lib/python/cellranger/barcodes/translation/3M-february-2018.txt.gz
+
+translateV3 <- read.table("F:/data/10XDatasets/10xv3_feature_to_gex_barcode_translation.txt", header=FALSE)
+translateV3.names <- translateV3[,1]
+translateV3 <- translateV3[,2]
+names(translateV3) <- translateV3.names
+
+data.10X.datasets.adt.kallisto.dir <- sapply(data.10X.datasets.dir,function(datasetDir)dir(path=file.path(datasetDir,"kallisto","features"), pattern="counts_unfiltered", recursive=TRUE, full.names=TRUE, include.dirs=TRUE))
+
+data.10X.datasets.adt.kallisto <- lapply(data.10X.datasets.adt.kallisto.dir,function(dir)read_count_output(dir, name = "cells_x_genes"))
+lapply(data.10X.datasets.adt.kallisto,dim)
+
+data.10X.datasets.adt.kallisto[grep("_v3$",data.10X.datasets)] <- lapply(data.10X.datasets.adt.kallisto[grep("_v3$",data.10X.datasets)],function(data){colnames(data) <- translateV3[colnames(data)]; return(data)})
+#data.10X.datasets.adt.kallisto.bc_rank <- lapply(data.10X.datasets.adt.kallisto,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
+
+#adt.kallist.aboveInf <- names(which(Matrix::colSums(data.10X.datasets.adt.kallisto[[1]]) > S4Vectors::metadata(data.10X.datasets.adt.kallisto.bc_rank[[1]])[["inflection"]]))
+
+#knee_plots.adt.kallisto <- lapply(data.10X.datasets.adt.kallisto.bc_rank,knee_plot)
+#cowplot::plot_grid(plotlist=knee_plots.adt.kallisto, nrow=1)
+```
+
+## Load CSC ADT data
+
+```{r}
+data.10X.datasets.adt.csc.dir <- sapply(data.10X.datasets.dir,function(datasetDir)dir(path=file.path(datasetDir,"cite-seq-count"), pattern="umi_count", recursive=TRUE, full.names=TRUE, include.dirs=TRUE))
+
+data.10X.datasets.adt.csc.dense.dir <- sapply(data.10X.datasets.dir,function(datasetDir)list.files(path=file.path(datasetDir,"cite-seq-count"), pattern="dense_umis.tsv", recursive=TRUE, full.names=TRUE, include.dirs=FALSE))
+
+data.10X.datasets.adt.csc_nc.dir <- grep("_nocorrect",data.10X.datasets.adt.csc.dir, value=TRUE)
+data.10X.datasets.adt.csc_nc.dense.dir <- grep("_nocorrect",data.10X.datasets.adt.csc.dense.dir, value=TRUE)
+
+data.10X.datasets.adt.csc.dir <- setdiff(data.10X.datasets.adt.csc.dir, data.10X.datasets.adt.csc_nc.dir)
+data.10X.datasets.adt.csc.dense.dir <- setdiff(data.10X.datasets.adt.csc.dense.dir, data.10X.datasets.adt.csc_nc.dense.dir)
+
+data.10X.datasets.adt.csc <- lapply(data.10X.datasets.adt.csc.dir,function(dir)Read10X(data.dir=dir, gene.column=1))
+#lapply(data.10X.datasets.adt.csc,dim)
+data.10X.datasets.adt.csc.dense <- lapply(data.10X.datasets.adt.csc.dense.dir,function(dir)read.table(file=dir))
+#lapply(data.10X.datasets.adt.csc.dense,dim)
+data.10X.datasets.adt.csc <- lapply(data.10X.datasets,function(dataset)Matrix::cbind2(data.10X.datasets.adt.csc[[dataset]],Matrix::Matrix(as.matrix(data.10X.datasets.adt.csc.dense[[dataset]]))))
+names(data.10X.datasets.adt.csc) <- data.10X.datasets
+data.10X.datasets.adt.csc <- lapply(data.10X.datasets.adt.csc,function(data)data[rownames(data) != "unmapped",])
+
+data.10X.datasets.adt.csc[grep("_v3$",data.10X.datasets)] <- lapply(data.10X.datasets.adt.csc[grep("_v3$",data.10X.datasets)],function(data){colnames(data) <- translateV3[colnames(data)]; return(data)})
+
+data.10X.datasets.adt.csc_nc <- lapply(data.10X.datasets.adt.csc_nc.dir,function(dir)Read10X(data.dir=dir, gene.column=1))
+#lapply(data.10X.datasets.adt.csc_nc,dim)
+data.10X.datasets.adt.csc_nc.dense <- lapply(data.10X.datasets.adt.csc_nc.dense.dir,function(dir)read.table(file=dir))
+#lapply(data.10X.datasets.adt.csc_nc.dense,dim)
+data.10X.datasets.adt.csc_nc <- lapply(data.10X.datasets,function(dataset)Matrix::cbind2(data.10X.datasets.adt.csc_nc[[dataset]],Matrix::Matrix(as.matrix(data.10X.datasets.adt.csc_nc.dense[[dataset]]))))
+names(data.10X.datasets.adt.csc_nc) <- data.10X.datasets
+data.10X.datasets.adt.csc_nc <- lapply(data.10X.datasets.adt.csc_nc,function(data)data[rownames(data) != "unmapped",])
+
+data.10X.datasets.adt.csc_nc[grep("_v3$",data.10X.datasets)] <- lapply(data.10X.datasets.adt.csc_nc[grep("_v3$",data.10X.datasets)],function(data){colnames(data) <- translateV3[colnames(data)]; return(data)})
+
+#data.10X.datasets.adt.csc.bc_rank <- lapply(data.10X.datasets.adt.csc,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
+
+#knee_plots.adt.csc <- lapply(data.10X.datasets.adt.csc.bc_rank,knee_plot)
+#cowplot::plot_grid(plotlist=knee_plots.adt.csc, nrow=1)
+```
+
+
+## Load CellRanger featureOnly ADT data
+
+```{r}
+data.10X.datasets.adt.cellranger.dir <- sapply(data.10X.datasets.dir,function(datasetDir)dir(path=file.path(datasetDir), pattern="raw_feature_bc_matrix", recursive=TRUE, full.names=TRUE, include.dirs=TRUE)[1])
+
+data.10X.datasets.adt.cellranger <- lapply(data.10X.datasets.adt.cellranger.dir,function(dir)Read10X(dir))
+lapply(data.10X.datasets.adt.cellranger,dim)
+#data.10X.datasets.adt.cellranger.bc_rank <- lapply(data.10X.datasets.adt.cellranger,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
+
+#knee_plots.adt.cellranger <- lapply(data.10X.datasets.adt.cellranger.bc_rank,knee_plot)
+#cowplot::plot_grid(plotlist=knee_plots.adt.cellranger, nrow=1)
+
+#cowplot::plot_grid(plotlist=c(knee_plots.adt.cellranger,knee_plots.adt.csc,knee_plots.adt.kallisto), labels=data.10X.datasets, nrow=3)
+```
+
+## Draw UMI count plots
+
+```{r}
+plotData <- rbind(ADT,HTO)
+for(i in seq_along(data.10X.datasets)){
+  dataset <- data.10X.datasets[i]
+  
+  cells <- data.10X.datasets.gex.aboveInf[[dataset]]
+  kallisto <- data.10X.datasets.adt.kallisto[[dataset]]
+  csc <- data.10X.datasets.adt.csc[[dataset]]
+  cellranger <- data.10X.datasets.adt.cellranger[[dataset]]
+  
+  totalUMI <- c("kallisto"=sum(kallisto),"csc"=sum(csc),"cellranger"=sum(cellranger))
+  
+  # for some reason kallisto was lacking counts from a singlecell barcode "ACTTCCGAGACGAGCT" in 10k_v3 dataset.
+  UMIincell <- c("kallisto"=sum(kallisto[,intersect(colnames(kallisto),cells)]),"csc"=sum(csc[,cells]),"cellranger"=sum(cellranger[,cells]))
+  
+  UMIindrops <- totalUMI - UMIincell
+  
+  df <- data.frame(method=names(totalUMI),Cell=UMIincell,EmptyDrop=UMIindrops)
+  df$dataset <- dataset
+  
+  plotData <- rbind(plotData,df)
+}
+
+plotData <- plotData %>% pivot_longer(c(-method,-dataset))
+plotData$name <- factor(plotData$name, levels=c("EmptyDrop","Cell"))
+
+ggplot(plotData,aes(x=method,y=value/10^6,fill=method, alpha=name)) + 
+  geom_bar(stat="identity", color="black") + 
+  scale_alpha_manual(values=c("EmptyDrop"=0.5,"Cell"=1)) + 
+  facet_wrap(~dataset, scales="free_y", nrow=1) + 
+  theme(panel.grid=element_blank(), panel.border=element_blank(), axis.line=element_line())
+
+```
+
+## Draw UMI per marker for 10X datasets with comparable antibody panels
+
+```{r}
+
+for(i in seq_along(data.10X.datasets)){
+  dataset <- data.10X.datasets[i]
+  
+  kallisto <- data.10X.datasets.adt.kallisto[[dataset]]
+  cells <- intersect(data.10X.datasets.gex.aboveInf[[dataset]],colnames(kallisto))
+  
+  
+  total <- Matrix::rowSums(kallisto)
+  Cell <- Matrix::rowSums(kallisto[,cells])
+  EmptyDrop <- total-Cell
+
+  add <- data.frame(Dataset=dataset,Marker=names(Cell),Cell,EmptyDrop)
+  
+  if(i == 1){
+    plotData <- add
+  } else {
+    plotData <- rbind(plotData,add)
+  }
+}
+
+plotData <- plotData %>% pivot_longer(c(-Marker, -Dataset))
+plotData$Marker <- gsub("isotype_control_","",plotData$Marker)
+plotData$subset <- factor(as.character(plotData$name), levels=c("EmptyDrop","Cell"))
+plotData$Dataset <- factor(as.character(plotData$Dataset), levels=data.10X.datasets)
+    
+data.10X.markerBarplot <- ggplot(plotData, aes(x=Marker, y=value/10^6, fill=subset)) + 
+  geom_bar(stat="identity", position="dodge", color="black", width=0.65) + 
+  scale_y_continuous(expand=c(0,0,0.05,0)) + 
+  scale_fill_manual(values=c("lightgrey","black")) + 
+  labs(y=bquote("ADT UMI counts ("~10^6~")")) + 
+  coord_flip() + 
+  facet_wrap(~Dataset, nrow=1, scales="free_x") + 
+  theme(axis.title.y=element_blank(), 
+        legend.position=c(1,0.98), 
+        legend.justification=c(1,1), 
+        legend.title=element_blank(),
+        legend.background=element_blank())
+
+
+data.10X.GEXrank <- cowplot::plot_grid(plotlist=knee_plots, labels=data.10X.datasets, hjust=-0.65, vjust=1.6, label_size=7, nrow=1)
+
+
+
+png(file=file.path(outdir,"Supplementary Figure 5.png"), width=figure.width.full, height=5, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
+cowplot::plot_grid(data.10X.GEXrank, data.10X.markerBarplot, labels=c("A", "B"), ncol=1, rel_heights=c(2,3), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust)
+dev.off()
 
 ```

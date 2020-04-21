@@ -185,11 +185,11 @@ All analysis was run on the NYU Medical Center computing cluster "BigPurple" on 
 time <- data.frame(ADT=c("kallisto"="7m54.320s", "cellranger"="348m21.313s", "csc"="173m29.692s"),
                    HTO=c("kallisto"="4m12.157s", "cellranger"="233m7.943s", "csc"="160m40.705s"))
 
-time.s <- data.frame(ADT=c("kallisto"=474, "cellranger"=20901, "csc"=10410), 
-                     HTO=c("kallisto"=252, "cellranger"=13988, "csc"=9641),
-                     PBMC10k_3P=c("kallisto"=591, "cellranger"=16940, "csc"=22645),
-                     PBMC1k_3P=c("kallisto"=234, "cellranger"=4309, "csc"=3943),
-                     PBMC10k_5P=c("kallisto"=629, "cellranger"=11972, "csc"=24735))
+time.s <- data.frame(ADT=c("kallisto"=474, "cellranger"=20901, "csc"=10410, "csc_nc"=6541,), 
+                     HTO=c("kallisto"=252, "cellranger"=13988, "csc"=9641, "csc_nc"=4051,),
+                     PBMC10k_3P=c("kallisto"=591, "cellranger"=16940, "csc"=22645, "csc_nc"=14420),
+                     PBMC1k_3P=c("kallisto"=234, "cellranger"=4309, "csc"=3943, "csc_nc"=3336),
+                     PBMC10k_5P=c("kallisto"=629, "cellranger"=11972, "csc"=24735, "csc_nc"=7652))
 
 fastqsize <- c("ADT"=159520324, 
                "HTO"=81146448, 

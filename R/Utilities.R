@@ -27,11 +27,6 @@ foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue"
       names(color.manual) <- levels(curMarker$group)
     }
     
-    
-    
-    
-    
-    
     curMarker.sum <- curMarker %>% group_by(wrap=wrap, group=group) %>% summarise(sum=sum(count)) %>% arrange(wrap, sum)
     curMarker.sum.label <- curMarker.sum %>% group_by(wrap) %>% summarise(label=paste(paste0(group,": ",sprintf("%05s",as.character(sum))),collapse="\n"))
     
@@ -45,18 +40,27 @@ foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue"
             axis.text.x=element_blank(), 
             axis.ticks=element_blank(), 
             panel.border=element_blank(), 
-            panel.grid = element_blank(), 
-            plot.margin = unit(c(0,0,0,0),"cm"), 
+            panel.grid=element_blank(), 
+            plot.margin=unit(c(0,0,0,0),"cm"), 
             legend.direction="vertical", 
             legend.title=element_blank(),
-            legend.background = element_blank(),
-            legend.box.margin = unit(c(0.3,0,0,0),"cm"), 
-            legend.key.size=unit(0.3,"cm"),
-            legend.position=c(0.5,1.5), 
-            legend.justification=c(0,1)) + 
-      geom_text(data=curMarker.sum.label, x = Inf, y = Inf, hjust=1, vjust=1.5, aes(label=label), size=3)
+            legend.background=element_blank(),
+            legend.box.margin=unit(c(0,0,0,0),"mm"), 
+            legend.key.width=unit(0.15,"cm"),
+            legend.key.height=unit(0.10,"cm"),
+            legend.position=c(0.4,2), 
+            legend.justification=c(0,1))
     
-    if(!is.null(wrap)) p.hist <- p.hist + facet_wrap( ~wrap)
+    if(!is.null(wrap)){
+      p.hist <- p.hist + geom_text(data=curMarker.sum.label, x = Inf, y = Inf, hjust=1, vjust=1.5, aes(label=label), size=1.5)
+      p.hist <- p.hist + facet_wrap( ~wrap)
+    } else {
+      scale_label <- with(curMarker.sum[order(factor(curMarker.sum$group, levels=levels(curMarker$group))),],paste0(group,": ",sprintf("%05s",as.character(sum))))
+      p.hist <- p.hist + 
+        scale_linetype_discrete(labels=scale_label) + 
+        scale_fill_manual(values=color.manual, labels=scale_label) + 
+        theme(legend.position=c(1,1.5), legend.justification=c(1,1), legend.text.align=1, plot.margin=unit(c(0.3,0,0,0),"cm"))
+    }
     #geom_text_repel(data=curMarker.sum, 
     #                aes(label=paste0(group,": ",sprintf("%05s",as.character(sum)))), 
     #                y=Inf, x=Inf, hjust=0, vjust=0, direction="y", segment.alpha=0, seed=114, size=3)
@@ -80,7 +84,7 @@ foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue"
     }
     
     if(!is.null(gates)){
-      p.foot <- p.foot + geom_vline(data=gates,aes(xintercept=gate), col="red", size=0.25, alpha=0.5, linetype="dashed")
+      p.foot <- p.foot + geom_vline(data=gates,aes(xintercept=gate), col="red", alpha=0.5, linetype="dashed")
     }
     
     p.hist.legend <- get_legend(p.hist)
@@ -88,7 +92,7 @@ foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue"
     p.foot.legend <- get_legend(p.foot)
     #p.foot <- p.foot + theme(legend.position="none")
     #p.legends <- plot_grid(p.hist.legend, p.foot.legend, nrow=1)
-    p <- plot_grid(p.hist, p.foot, ncol=1, align="v", axis="lr", labels=c(curMarker.name,""), hjust = 0, vjust=1, rel_heights=c(5,15,2))
+    p <- plot_grid(p.hist, p.foot, ncol=1, align="v", axis="lr", label_size=7, labels=c(curMarker.name,""), hjust = 0, vjust=1.1, rel_heights=c(5,15,2))
     
     return(p)
 }
@@ -208,4 +212,85 @@ knee_plot <- function(bc_rank) {
         annotation_logticks() +
         labs(y = "Rank", x = "Total UMIs")
     return(p)
+}
+
+knee_plot_auc <- function(bc_rank) {
+  library("ggplot2")
+  knee_plt <- tibble(rank = bc_rank[["rank"]],
+                     total = bc_rank[["total"]]) %>% 
+    distinct() %>% 
+    dplyr::filter(total > 0)
+  annot <- tibble(inflection = S4Vectors::metadata(bc_rank)[["inflection"]],
+                  rank_cutoff = max(bc_rank$rank[bc_rank$total > S4Vectors::metadata(bc_rank)[["inflection"]]]),
+                  knee = S4Vectors::metadata(bc_rank)[["knee"]],
+                  knee_cutoff = max(bc_rank$rank[bc_rank$total > S4Vectors::metadata(bc_rank)[["knee"]]]))
+  p <- ggplot(knee_plt, aes(total, rank)) +
+    geom_line() +
+    geom_ribbon(aes(xmin = 0, xmax = total, fill = rank > annot$rank_cutoff), alpha=0.5) + 
+    geom_hline(data=annot,aes(yintercept = rank_cutoff), linetype = 2) +
+    geom_label(data=annot,aes(y=rank_cutoff,x=Inf,label=rank_cutoff), hjust=1, vjust=0) + 
+    scale_fill_manual(values=c("black","grey"), labels=c("Cell","EmptyDrop")) + 
+    scale_x_log10(expand=c(0,0,0.05,0)) +
+    scale_y_log10(expand=c(0,0,0.05,0)) +
+    annotation_logticks() +
+    labs(y = "Rank", x = "Total UMIs") + 
+    guides(fill=guide_legend(override.aes=list(alpha=1, color="black"))) + 
+    theme(legend.position=c(1,.99), 
+          legend.justification=c(1,1), 
+          legend.title=element_blank(),
+          legend.direction="vertical")
+  return(p)
+}
+
+knee_plot_highlight <- function(bc_rank, highlight=c()) {
+  library("ggplot2")
+  knee_plt <- tibble(rank = bc_rank[["rank"]],
+                     total = bc_rank[["total"]], 
+                     barcode=rownames(bc_rank)) %>% 
+    distinct() %>% 
+    dplyr::filter(total > 0)
+  
+  annot <- tibble(inflection = S4Vectors::metadata(bc_rank)[["inflection"]],
+                  rank_cutoff = max(bc_rank$rank[bc_rank$total > S4Vectors::metadata(bc_rank)[["inflection"]]]),
+                  knee = S4Vectors::metadata(bc_rank)[["knee"]],
+                  knee_cutoff = max(bc_rank$rank[bc_rank$total > S4Vectors::metadata(bc_rank)[["knee"]]]))
+  
+  cutoff <- 18000
+  data.highlight <- knee_plt[knee_plt$barcode %in% highlight,]
+  data.highlight <- rbind(data.highlight[data.highlight$rank <= cutoff,],data.highlight[sample(nrow(data.highlight[data.highlight$rank > cutoff,]),1000),])
+  
+  p <- ggplot(knee_plt, aes(total, rank)) +
+    #geom_point(data=data.highlight,aes(x=1), shape="-", size=1, alpha=.2) + 
+    geom_segment(data=data.highlight[data.highlight$rank > cutoff,],aes(x=0, xend=total, yend=rank), size=0.001, color="black", alpha=1, show.legend=FALSE) + 
+    geom_rect(data=data.highlight[data.highlight$rank <= cutoff,],aes(xmin=0, xmax=total, ymin=rank-0.5, ymax=rank+0.5), fill="black", alpha=1) + 
+    geom_line(color="grey") +    
+    #geom_ribbon(data=data.highlight, aes(xmin = 0, xmax = total), fill="black", alpha=0.5) +
+    #geom_segment(data=knee_plt[-c(knee_plt$barcode %in% highlight | knee_plt$rank > max(data.highlight$rank)),],aes(x=0, xend=total, yend=rank, size=(10/(10^rank))), color="white", alpha=0.05, show.legend=FALSE) + 
+    # to show emptyDroplets within dense cell area
+    #geom_segment(data=knee_plt[-c(knee_plt$rank > max(highlight$rank) | knee_plt$barcode %in% highlight),],aes(x=0, xend=total, yend=rank), color="white", alpha=0.1, size=0.05) +
+    #geom_hline(data=annot,aes(yintercept = rank_cutoff), linetype = 2) +
+    #geom_label(data=annot,aes(y=rank_cutoff,x=Inf,label=rank_cutoff), hjust=1, vjust=0) + 
+    geom_hline(yintercept=length(highlight), linetype="dashed", color="red", size=0.25, alpha=0.5) + 
+    geom_label(data=annot,aes(y=length(highlight),x=Inf,label=length(highlight)), hjust=1, vjust=1) + 
+    scale_x_log10(expand=c(0,0,0.05,0)) +
+    scale_y_log10(expand=c(0,0,0.05,0)) + 
+    #scale_color_manual(values=c("black","white")) + 
+    annotation_logticks() +
+    labs(y = "Rank", x = "Total UMIs") + 
+    #guides(color=guide_legend(override.aes=list(alpha=1, size=1))) + 
+    theme(legend.position=c(1,.99), 
+          legend.justification=c(1,1), 
+          legend.title=element_blank(),
+          legend.direction="vertical")
+  return(p)
+}
+
+## nth function extracts the value at a set fractile or median if fractile "rank" is less than a set "nth" threshhold
+nth <- function(value, nth=10, fractile=0.9){
+  if(length(value)*(1-fractile) <= nth){
+    newvalue <- median(value)
+  } else {
+    newvalue <- quantile(value, probs=c(fractile))
+  }
+  return(newvalue)
 }

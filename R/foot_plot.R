@@ -109,9 +109,9 @@ foot_plot <- function(data,
   }
   
   
-  if(draw.smooth == TRUE) p <- p + geom_line(stat="smooth",method="auto",se=FALSE, aes(color=color, group=group, linetype=linetype),size=1.5, alpha=0.5)
-  if(draw.points == TRUE) p <- p + geom_point(aes(color=color),alpha=1,pch=19,size=0.75)
-  if(draw.line == TRUE) p <- p + geom_line(aes(color=color, group=group, linetype=linetype),size=1,alpha=0.5)
+  if(draw.smooth == TRUE) p <- p + geom_line(stat="smooth",method="auto",se=FALSE, aes(color=color, group=group, linetype=linetype), alpha=0.5)
+  if(draw.points == TRUE) p <- p + geom_point(aes(color=color),alpha=1,pch=19)
+  if(draw.line == TRUE) p <- p + geom_line(aes(color=color, group=group, linetype=linetype),alpha=0.5)
   
   
   ## ADD fractile STATS
@@ -119,7 +119,7 @@ foot_plot <- function(data,
     if(fractile.upper > 0){
       ## Add line segments for upper fractile
       # a bit of a hack to get positions to align? is there a better solution?
-      p <- p + stat_summary_bin(geom = "segment", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.upper,trans=trans,add.n=add.n), aes(x=1, xend=fractile.upper, group=group),size=0.75, linetype="dashed")
+      p <- p + stat_summary_bin(geom = "segment", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.upper,trans=trans,add.n=add.n), aes(x=1, xend=fractile.upper, group=group), linetype="dashed")
       
       ## Add text labels for upper fractile
       p <- p + stat_summary_bin(geom = "text_repel", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.upper,trans=trans,add.n=add.n), aes(x=fractile.upper, group=group), position=position_nudge(x=(1-fractile.upper)), col="black", direction="y",hjust=1,nudge_x=fractile.upper, fontface="bold",segment.alpha=0.25)
@@ -131,7 +131,7 @@ foot_plot <- function(data,
     
     if(fractile.lower > 0){
       ## Add line segments for lower fractile
-      p <- p + stat_summary_bin(geom = "segment", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.lower,trans=trans,add.n=add.n), aes(x=1, xend=fractile.lower, group=group),size=0.75,linetype="dashed",alpha=0.5)
+      p <- p + stat_summary_bin(geom = "segment", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.lower,trans=trans,add.n=add.n), aes(x=1, xend=fractile.lower, group=group),linetype="dashed",alpha=0.5)
       
       
       ## Add text labels for lower fractile
@@ -248,14 +248,13 @@ foot_plot_flip <- function(data,
     subset <- do.call("c",subset)
     plotData.barcode <- plotData[subset,]
     
-    #p <- p + geom_point(data=plotData.barcode, aes(y=steps[barcodeGroup], col=barcodeGroup, alpha=barcode.alpha),shape="|")
-    p <- p + geom_text(data=plotData.barcode, aes(y=steps[barcodeGroup], col=barcodeGroup, alpha=barcode.alpha),label="-")
+    p <- p + geom_point(data=plotData.barcode, aes(y=steps[barcodeGroup], col=barcodeGroup, alpha=barcode.alpha),shape="-")
   }
   
   
-  if(draw.smooth == TRUE) p <- p + geom_line(stat="smooth",method="auto",se=FALSE, aes(color=color, group=group, linetype=linetype),size=1.5, alpha=0.5)
-  if(draw.points == TRUE) p <- p + geom_point(aes(color=color),alpha=1,pch=19,size=0.75)
-  if(draw.line == TRUE) p <- p + geom_line(aes(color=color, group=group, linetype=linetype),size=1,alpha=0.5)
+  if(draw.smooth == TRUE) p <- p + geom_line(stat="smooth",method="auto",se=FALSE, aes(color=color, group=group, linetype=linetype), alpha=0.5)
+  if(draw.points == TRUE) p <- p + geom_point(aes(color=color),alpha=1,pch=19)
+  if(draw.line == TRUE) p <- p + geom_line(aes(color=color, group=group, linetype=linetype),alpha=0.5)
   
   
   ## ADD fractile STATS
@@ -263,7 +262,7 @@ foot_plot_flip <- function(data,
     if(fractile.upper > 0){
       ## Add line segments for upper fractile
       # a bit of a hack to get positions to align? is there a better solution?
-      p <- p + stat_summary_bin(geom = "segment", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.upper,trans=trans,add.n=add.n), aes(x=1, xend=fractile.upper, group=group),size=0.75, linetype="dashed")
+      p <- p + stat_summary_bin(geom = "segment", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.upper,trans=trans,add.n=add.n), aes(x=1, xend=fractile.upper, group=group), linetype="dashed")
       
       ## Add text labels for upper fractile
       p <- p + stat_summary_bin(geom = "text_repel", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.upper,trans=trans,add.n=add.n), aes(x=fractile.upper, group=group), position=position_nudge(x=(1-fractile.upper)), col="black", direction="y",hjust=1,nudge_x=fractile.upper, fontface="bold",segment.alpha=0.25)
@@ -275,7 +274,7 @@ foot_plot_flip <- function(data,
     
     if(fractile.lower > 0){
       ## Add line segments for lower fractile
-      p <- p + stat_summary_bin(geom = "segment", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.lower,trans=trans,add.n=add.n), aes(x=1, xend=fractile.lower, group=group),size=0.75,linetype="dashed",alpha=0.5)
+      p <- p + stat_summary_bin(geom = "segment", binwidth=2, fun.data = fractile.line,  fun.args=list(Q=fractile.lower,trans=trans,add.n=add.n), aes(x=1, xend=fractile.lower, group=group),linetype="dashed",alpha=0.5)
       
       
       ## Add text labels for lower fractile

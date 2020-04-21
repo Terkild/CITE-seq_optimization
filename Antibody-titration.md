@@ -21,7 +21,7 @@ require("tidyverse")
     ## -- Attaching packages -------------------------------------------------------------------------------- tidyverse 1.3.0 --
 
     ## v ggplot2 3.3.0     v purrr   0.3.3
-    ## v tibble  2.1.3     v dplyr   0.8.5
+    ## v tibble  3.0.0     v dplyr   0.8.5
     ## v tidyr   1.0.2     v stringr 1.4.0
     ## v readr   1.3.1     v forcats 0.5.0
 
@@ -30,13 +30,8 @@ require("tidyverse")
     ## x dplyr::lag()    masks stats::lag()
 
 ``` r
-theme_set(theme_bw() + 
-          theme(
-            axis.text.x=element_text(angle=45, hjust=1), 
-            panel.grid.minor = element_blank(), 
-            strip.background=element_blank(), 
-            strip.text=element_text(face="bold", size=10), 
-            legend.position = "bottom"))
+## Load ggplot theme and defaults
+source("R/ggplot_settings.R")
 
 ## Load helper functions (ggplot themes, biexp transformation etc.)
 source("R/Utilities.R")
@@ -58,20 +53,17 @@ table(object$group)
 
     ## 
     ## PBMC_50ul_1_1000k PBMC_50ul_4_1000k PBMC_25ul_4_1000k  PBMC_25ul_4_200k 
-    ##              1881              2167              2447              3070 
+    ##              1777              1777              1777              1777 
     ##  Lung_50ul_1_500k  Lung_50ul_4_500k           Doublet          Negative 
-    ##              1876              1897                 0                 0
+    ##              1681              1681                 0                 0
 
 ``` r
-Idents(object) <- object$group
-
-## While cell numbers are close, comparison is easier if we downsample to the same number of cells
-object <- subset(object, subset=volume == "50µl", downsample=1800)
+object <- subset(object, subset=volume == "50µl")
 object
 ```
 
     ## An object of class Seurat 
-    ## 33572 features across 7200 samples within 3 assays 
+    ## 33572 features across 6916 samples within 3 assays 
     ## Active assay: RNA.kallisto (33514 features)
     ##  2 other assays present: HTO.kallisto, ADT.kallisto
     ##  3 dimensional reductions calculated: pca, tsne, umap
@@ -79,11 +71,11 @@ object
 ## Cell type and tissue overview
 
 ``` r
-p.tsne.tissue <- DimPlot(object, group.by="tissue", reduction="tsne", combine=FALSE)[[1]] + theme_get() + facet_wrap(~"Tissue") + scale_color_manual(values=color.tissue)
+p.tsne.tissue <- DimPlot(object, group.by="tissue", reduction="tsne", pt.size=0.1, combine=FALSE)[[1]] + theme_get() + facet_wrap(~"Tissue") + scale_color_manual(values=color.tissue)
 
-p.tsne.cluster <- DimPlot(object, group.by="supercluster", reduction="tsne", combine=FALSE)[[1]] + theme_get() + scale_color_manual(values=color.supercluster) + facet_wrap(~"Cell types")
+p.tsne.cluster <- DimPlot(object, group.by="supercluster", reduction="tsne", pt.size=0.1, combine=FALSE)[[1]] + theme_get() + scale_color_manual(values=color.supercluster) + facet_wrap(~"Cell types")
 
-p.tsne.finecluster <- DimPlot(object, label = T, reduction="tsne", group.by="fineCluster", combine=FALSE)[[1]] + theme_get() + facet_wrap( ~"Clusters") + guides(col=F)
+p.tsne.finecluster <- DimPlot(object, label=TRUE, label.size=3, reduction="tsne", pt.size=0.1, group.by="fineCluster", combine=FALSE)[[1]] + theme_get() + facet_wrap( ~"Clusters") + guides(col=F)
 ```
 
     ## Warning: Using `as.character()` on a quosure is deprecated as of rlang 0.3.0.
@@ -133,6 +125,10 @@ p.ADTrank.Abtitration
 ``` r
 abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
 rownames(abpanel) <- abpanel$Marker
+
+markerStats <- read.table("data/markerByClusterStats.tsv")
+markerStats.PBMC <- markerStats[markerStats$tissue == "PBMC",]
+marker.order <- markerStats.PBMC$marker[order(-markerStats.PBMC$conc_µg_per_mL, -markerStats.PBMC$UMItotal)]
 ```
 
 ``` r
@@ -141,11 +137,8 @@ ADT.matrix$marker <- rownames(ADT.matrix)
 ADT.matrix$conc <- abpanel[ADT.matrix$marker,"conc_µg_per_mL"]
 ADT.matrix <- ADT.matrix %>% pivot_longer(c(-marker,-conc))
 cell.annotation <- FetchData(object, vars=c("dilution", "tissue"))
-#ADT.matrix$dilution <- cell.annotation[ADT.matrix$name,"dilution"] 
 
 ADT.matrix.agg <- ADT.matrix %>% group_by(dilution=cell.annotation[name,"dilution"], tissue=cell.annotation[name,"tissue"], marker, conc) %>% summarise(sum=sum(value))
-
-marker.order <- ADT.matrix.agg$marker[order(-ADT.matrix.agg$conc[(ADT.matrix.agg$dilution == "DF1" & ADT.matrix.agg$tissue == "Lung")], ADT.matrix.agg$sum[(ADT.matrix.agg$dilution == "DF1" & ADT.matrix.agg$tissue == "Lung")], decreasing = FALSE)]
 
 ADT.matrix.agg$marker.byConc <- factor(ADT.matrix.agg$marker, levels=marker.order)
 
@@ -155,9 +148,24 @@ ann.markerConc$Marker <- factor(marker.order, levels=marker.order)
 lines <- length(marker.order)-cumsum(sapply(split(ann.markerConc$Marker,ann.markerConc$conc_µg_per_mL),length))+0.5
 lines <- data.frame(breaks=lines[-length(lines)])
 
-p1 <- ggplot(ann.markerConc, aes(x=Marker, y=1, fill=conc_µg_per_mL)) + geom_bar(stat="identity")+ scale_fill_viridis_c(trans="log2") + theme_minimal() + theme(axis.title = element_blank(), axis.text.x=element_blank(), panel.grid=element_blank(), legend.position="right", plot.margin=unit(c(0,0,0,0),"cm")) + scale_y_continuous(expand=c(0,0)) + labs(fill="µg/mL") + geom_vline(data=lines,aes(xintercept=breaks), linetype="dashed", alpha=0.5) + coord_flip()
-
-p2 <- ggplot(ADT.matrix.agg, aes(x=marker.byConc,y=log2(sum))) + geom_line(aes(group=marker), size=2, color="#666666") + geom_point(aes(group=dilution, fill=dilution), pch=21) + facet_wrap(~tissue) + scale_fill_manual(values=color.dilution) + geom_vline(data=lines,aes(xintercept=breaks), linetype="dashed", alpha=0.5) + theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position="right", legend.justification="left", legend.title.align=0, legend.key.width=unit(0.2,"cm")) + ylab("log2(UMI sum)") + scale_y_continuous(breaks=c(9:17)) + coord_flip()
+p1 <- ggplot(ann.markerConc, aes(x=1, y=Marker, fill=conc_µg_per_mL)) + 
+  geom_tile(col=alpha(col="black",alpha=0.2)) + 
+  geom_hline(data=lines,aes(yintercept=breaks), linetype="dashed", alpha=0.5) + 
+  scale_fill_viridis_c(trans="log2") + 
+  labs(fill="µg/mL") + 
+  theme_get() + 
+  theme(axis.ticks.x=element_blank(), axis.title = element_blank(), axis.text.x=element_blank(), panel.grid=element_blank(), legend.position="right", plot.margin=unit(c(0.1,0.1,0.1,0.1),"mm")) + scale_x_continuous(expand=c(0,0))
+  
+p2 <- ggplot(ADT.matrix.agg, aes(x=marker.byConc,y=log2(sum))) + 
+  geom_line(aes(group=marker), size=1.2, color="#666666") + 
+  geom_point(aes(group=dilution, fill=dilution), pch=21, size=0.7) + 
+  geom_vline(data=lines,aes(xintercept=breaks), linetype="dashed", alpha=0.5) + 
+  scale_fill_manual(values=color.dilution) + 
+  facet_wrap(~tissue) + 
+  scale_y_continuous(breaks=c(9:17)) + 
+  ylab("log2(UMI sum)") + 
+  theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position="right", legend.justification="left", legend.title.align=0, legend.key.width=unit(0.2,"cm")) + 
+  coord_flip()
 
 library(patchwork)
 titration.totalCount <- p1 + guides(fill=F) + p2 + guides(fill=F) + plot_spacer() + guide_area() + plot_layout(ncol=4, widths=c(1,30,0.1), guides='collect')
@@ -174,8 +182,14 @@ Samples stained with diluted Ab panel have reduced ADT counts.
 ``` r
 scaleFUN <- function(x) sprintf("%.2f", x)
 
-p.ADTcount.AbtitrationByConc <- ggplot(ADT.matrix.agg[order(-ADT.matrix.agg$conc, ADT.matrix.agg$sum),], aes(x=dilution, y=sum/10^6, fill=conc)) + geom_bar(stat="identity", col=alpha(col="black",alpha=0.05)) + facet_wrap(~tissue) + scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)
-) + scale_y_continuous(expand=c(0,0,0,0.05)) + guides() + ylab("ADT UMI count (x10^6)") + theme(panel.grid.major=element_blank(), axis.title.x=element_blank(), panel.border=element_blank(), axis.line = element_line(), legend.position="right") + labs(fill="µg/mL") + guides(fill=guide_colourbar(reverse=T))
+p.ADTcount.AbtitrationByConc <- ggplot(ADT.matrix.agg[order(-ADT.matrix.agg$conc, -ADT.matrix.agg$sum),], aes(x=dilution, y=sum/10^6, fill=conc)) + 
+  geom_bar(stat="identity", col=alpha(col="black",alpha=0.05)) + 
+  scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + 
+  scale_y_continuous(expand=c(0,0,0,0.05)) + 
+  labs(fill="µg/mL", y=bquote("ADT UMI counts ("~10^6~")")) + 
+  guides(fill=guide_colourbar(reverse=T)) + 
+  facet_wrap(~tissue) + 
+  theme(panel.grid.major=element_blank(), axis.title.x=element_blank(), panel.border=element_blank(), axis.line = element_line(), legend.position="right")
 
 p.ADTcount.AbtitrationByConc
 ```
@@ -197,37 +211,43 @@ ADT.matrix <- ADT.matrix %>% pivot_longer(c(-marker,-conc))
 
 cell.annotation <- FetchData(object, vars=c("dilution", "tissue", "fineCluster"))
 
+ADT.matrix.agg <- ADT.matrix %>% group_by(dilution=cell.annotation[name,"dilution"], tissue=cell.annotation[name,"tissue"], fineCluster=cell.annotation[name,"fineCluster"], marker, conc) %>% summarise(sum=sum(value), median=quantile(value, probs=c(0.9)), nth=nth(value))
 
-## nth function extracts the value at a set fractile or at the 10th event depending on which is lowest
-nth <- function(value, nth=10, fractile=0.9){
-  if(length(value)*(1-fractile) <= nth){
-    newvalue <- sort(value, decreasing=TRUE)[nth]
-  } else {
-    newvalue <- quantile(value, probs=c(fractile))
-  }
-  return(newvalue)
-}
-
-ADT.matrix.agg <- ADT.matrix %>% group_by(dilution=cell.annotation[name,"dilution"], tissue=cell.annotation[name,"tissue"], ident=cell.annotation[name,"fineCluster"], marker, conc) %>% summarise(sum=sum(value), median=quantile(value, probs=c(0.9)), nth=nth(value))
-
-Cluster.max <- ADT.matrix.agg %>% group_by(marker, tissue) %>% summarize(ident=ident[which.max(nth)])
+Cluster.max <- markerStats[,c("marker","tissue","fineCluster")]
+Cluster.max$fineCluster <- factor(Cluster.max$fineCluster)
+Cluster.max$tissue <- factor(Cluster.max$tissue, levels=c("PBMC","Lung"))
 
 ADT.matrix.aggByClusterMax <- Cluster.max %>% left_join(ADT.matrix.agg)
 ```
 
-    ## Joining, by = c("marker", "tissue", "ident")
+    ## Joining, by = c("marker", "tissue", "fineCluster")
+
+    ## Warning: Column `fineCluster` joining factors with different levels, coercing to
+    ## character vector
 
 ``` r
 ADT.matrix.aggByClusterMax$marker.byConc <- factor(ADT.matrix.aggByClusterMax$marker, levels=marker.order)
 
-p3 <- ggplot(ADT.matrix.aggByClusterMax, aes(x=marker.byConc, y=log2(nth))) + geom_line(aes(group=marker), size=2, color="#666666") + geom_point(aes(group=dilution, fill=dilution), pch=21) + facet_wrap(~tissue) + scale_fill_manual(values=color.dilution) + geom_vline(data=lines,aes(xintercept=breaks), linetype="dashed", alpha=0.5) + theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position="right", legend.justification="left", legend.title.align=0, legend.key.width=unit(0.2,"cm")) + ylab("90th percentile UMI of expressing cluster") + scale_y_continuous(breaks=c(0:11), labels=2^c(0:11), expand=c(0.05,0.5)) + coord_flip() +
-## To add a label indicating which cluster is used in the calculation, add:
-  geom_text(aes(label=ident), y=Inf, adj=1, size=2.5)
+p3 <- ggplot(ADT.matrix.aggByClusterMax, aes(x=marker.byConc, y=log2(nth))) + 
+  geom_line(aes(group=marker), size=1.2, color="#666666") + 
+  geom_point(aes(group=dilution, fill=dilution), pch=21, size=0.7) + 
+  geom_vline(data=lines,aes(xintercept=breaks), linetype="dashed", alpha=0.5) + 
+  geom_text(aes(label=paste0(fineCluster," ")), y=Inf, adj=1, size=1.5) + 
+  facet_wrap(~tissue) + 
+  scale_fill_manual(values=color.dilution) + 
+  scale_y_continuous(breaks=c(0:11), labels=2^c(0:11), expand=c(0.05,0.5)) + 
+  ylab("90th percentile UMI of expressing cluster") + 
+  theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position="right", legend.justification="left", legend.title.align=0, legend.key.width=unit(0.2,"cm")) + 
+  coord_flip()
 
 titration.clusterCount <- p1 + theme(legend.position="none") + p3 + theme(legend.position="none") + plot_spacer() + plot_layout(ncol=4, widths=c(1,30,0.1), guides='collect')
 
 titration.clusterCount
 ```
+
+    ## Warning: Removed 10 row(s) containing missing values (geom_path).
+
+    ## Warning: Removed 10 rows containing missing values (geom_point).
 
 ![](Antibody-titration_files/figure-gfm/TitrationByCluster-1.png)<!-- -->
 
@@ -235,25 +255,33 @@ titration.clusterCount
 
 ``` r
 ## First row of plots
-A <- p.tsne.cluster + theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.title.x=element_blank(), axis.title.y=element_text()) + theme(legend.position=c(0.5,0.01), legend.justification=c(0.5,1), legend.margin=margin(0,0,0,0), legend.title = element_blank(), legend.background=element_blank()) + guides(color=guide_legend(ncol=2, override.aes=list(shape=19, size=3), keyheight=unit(0.4, "cm"), keywidth=unit(0.3, "cm")))
+A <- p.tsne.cluster + theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.title.x=element_blank(), axis.title.y=element_text()) + theme(legend.position=c(0.5,0.01), legend.justification=c(0.5,1), legend.margin=margin(0,0,0,0), legend.title = element_blank(), legend.background=element_blank(), plot.margin = unit(c(1,1,5,1),"mm")) + guides(color=guide_legend(ncol=2, override.aes=list(shape=19, size=1.5), keyheight=unit(0.25, "cm"), keywidth=unit(0.15, "cm")))
 B <- p.tsne.finecluster + theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.title.y=element_blank(), axis.title.x=element_text())
-C <- p.tsne.tissue + theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.title.y=element_blank(),axis.title.x=element_blank()) + theme(legend.position=c(0.5,0.01), legend.justification=c(0.5,2), legend.margin=margin(0,0,0,0), legend.title = element_blank(), legend.direction="horizontal", legend.background=element_blank()) + guides(color=guide_legend(override.aes=list(shape=19, size=3), keyheight=unit(0.4, "cm"), keywidth=unit(0.3, "cm")))
+C <- p.tsne.tissue + theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.title.y=element_blank(),axis.title.x=element_blank()) + theme(legend.position=c(0.5,0.01), legend.justification=c(0.5,2), legend.margin=margin(0,0,0,0), legend.title = element_blank(), legend.direction="horizontal", legend.background=element_blank()) + guides(color=guide_legend(override.aes=list(shape=19, size=1.5), keyheight=unit(0.25, "cm"), keywidth=unit(0.15, "cm")))
 
-D <- p.ADTcount.AbtitrationByConc + theme(legend.key.width=unit(0.3,"cm"), legend.text = element_text(size=8))#p.ADTcount.Abtitration
+D <- p.ADTcount.AbtitrationByConc + theme(legend.key.width=unit(0.3,"cm"), legend.key.height=unit(0.4,"cm"), legend.text=element_text(size=unit(5,"pt")))#p.ADTcount.Abtitration
 
-E1 <- p1 + theme(text = element_text(size=10))
+E1 <- p1
 E.legend <- cowplot::get_legend(E1)
 E1 <- E1 + theme(legend.position="none")
 E2 <- p2
 E2 <- E2 + theme(legend.position="none")
 F1 <- p3 + theme(legend.position="none")
 
-AD <- cowplot::plot_grid(A, B, C, D, labels=c("A", "B", "C", "D"), nrow=1, align="h", axis="b", rel_widths = c(2.2,2,2,2.2))
 
-EF <- cowplot::plot_grid(E1, E2, E1, F1, nrow=1, align="h", axis="tb", labels=c("E", "", "F", ""), rel_widths=c(2,10,2,10))
 
-png(file=file.path(outdir,"Figure 1.png"), width=10, height=9, units = "in", res=300)
-cowplot::plot_grid(AD, EF, ncol=1, rel_heights=c(2.3,5), align="v", axis="l")
+AD <- cowplot::plot_grid(A, B, C, D, labels=c("A", "B", "C", "D"), label_size=panel.label_size, nrow=1, vjust=panel.label_vjust, hjust=panel.label_hjust, align="h", axis="tb", rel_widths = c(2.2,2,2,2.2))
+
+EF <- cowplot::plot_grid(E1, E2, E1, F1, nrow=1, align="h", axis="tb", labels=c("E", "", "F", ""), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust, rel_widths=c(2,10,2,10))
+```
+
+    ## Warning: Removed 10 row(s) containing missing values (geom_path).
+
+    ## Warning: Removed 10 rows containing missing values (geom_point).
+
+``` r
+png(file=file.path(outdir,"Figure 1.png"), width=figure.width.full, height=6.3, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
+cowplot::plot_grid(AD, EF, ncol=1, rel_heights=c(2.4,5), align="v", axis="l")
 dev.off()
 ```
 
@@ -267,9 +295,9 @@ dev.off()
 # CD4, CD19, CD103
 curMarker.name <- "CD4"
 curMarker.DF1conc <- abpanel[curMarker.name, "conc_µg_per_mL"]
-gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.28,0.46))
+gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.28,0.50))
 
-p.CD4 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, gates=gate, legend=TRUE)
+p.CD4 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, gates=gate, legend=FALSE)
 ```
 
     ## 
@@ -292,71 +320,40 @@ p.CD4 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=cur
     ##     align_plots
 
 ``` r
-p.CD4
-```
-
-![](Antibody-titration_files/figure-gfm/titrationExamples-1.png)<!-- -->
-
-``` r
 curMarker.name <- "CD19"
 curMarker.DF1conc <- abpanel[curMarker.name, "conc_µg_per_mL"]
-gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.91,0.71))
+gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.92,0.75))
 
 p.CD19 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, gates=gate, legend=FALSE)
-p.CD19
-```
 
-![](Antibody-titration_files/figure-gfm/titrationExamples-2.png)<!-- -->
-
-``` r
 curMarker.name <- "HLA-DR"
 curMarker.DF1conc <- abpanel[curMarker.name, "conc_µg_per_mL"]
 gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.47,0.295))
 
 p.HLADR <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, gates=gate, legend=FALSE)
-p.HLADR
-```
 
-![](Antibody-titration_files/figure-gfm/titrationExamples-3.png)<!-- -->
-
-``` r
 A <- cowplot::plot_grid(p.HLADR, p.CD4, p.CD19, nrow=1)
 
 ## Markers that should not be reduced
 # CD39, CD14, CD3
 curMarker.name <- "CD3"
 curMarker.DF1conc <- abpanel[curMarker.name, "conc_µg_per_mL"]
-gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.55,0.45))
+gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.56,0.46))
 
 p.CD3 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, gates=gate, legend=FALSE)
-p.CD3
-```
 
-![](Antibody-titration_files/figure-gfm/titrationExamples-4.png)<!-- -->
-
-``` r
 curMarker.name <- "CD14"
 curMarker.DF1conc <- abpanel[curMarker.name, "conc_µg_per_mL"]
-gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.58,0.79))
+gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.68,0.86))
 
 p.CD14 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, gates=gate, legend=FALSE)
-p.CD14
-```
 
-![](Antibody-titration_files/figure-gfm/titrationExamples-5.png)<!-- -->
-
-``` r
 curMarker.name <- "CD39"
 curMarker.DF1conc <- abpanel[curMarker.name, "conc_µg_per_mL"]
-gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.54,0.32))
+gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0.54,0.33))
 
 p.CD39 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, gates=gate, legend=FALSE)
-p.CD39
-```
 
-![](Antibody-titration_files/figure-gfm/titrationExamples-6.png)<!-- -->
-
-``` r
 B <- cowplot::plot_grid(p.CD3, p.CD14, p.CD39, nrow=1)
 
 ## Ubiqutously expressed markers
@@ -373,15 +370,18 @@ p.CD44 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=cu
 
 curMarker.name <- "CD45"
 curMarker.DF1conc <- abpanel[curMarker.name, "conc_µg_per_mL"]
-gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0,0.07))
+gate <- data.frame(wrap=factor(c("PBMC","Lung"),levels=c("PBMC","Lung")),gate=c(0,0.05))
 
 p.CD45 <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, gates=gate, legend=FALSE)
 
+# a bit of a hack to get celltype legend
+p.withLegend <- ggplot(data.frame(supercluster=object$supercluster),aes(color=supercluster,x=1,y=1)) + geom_point(shape=15, size=1.5)
+p.legend <- cowplot::get_legend(p.withLegend + theme(legend.title=element_blank(),legend.margin=margin(0,0,0,0), legend.key.size = unit(0.15,"cm"),legend.position = c(0.98,1.1), legend.justification=c(1,1), legend.direction="horizontal"))
+
 C <- cowplot::plot_grid(p.HLA, p.CD44, p.CD45, nrow=1)
 
-
-png(file=file.path(outdir,"Figure 2.png"), width=16, height=13.5, units = "in", res=300)
-cowplot::plot_grid(NULL, NULL, A, NULL, B, NULL, C, labels=c("","Figure 2","A","","B","","C"), vjust=-0.5, hjust=0, label_size=20, ncol=1, rel_heights= c(1.6,1.5,20,1.5,20,1.5,20))
+png(file=file.path(outdir,"Figure 2.png"), units=figure.unit, res=figure.resolution, width=figure.width.full, height=6, antialias=figure.antialias)
+cowplot::plot_grid(NULL, p.legend, A, NULL, B, NULL, C, labels=c("","","A","","B","","C"), vjust=-0.5, hjust=panel.label_hjust, label_size=panel.label_size, ncol=1, rel_heights= c(1.3,1.5,20,1.5,20,1.5,20))
 dev.off()
 ```
 
@@ -399,16 +399,43 @@ markers <- intersect(abpanel[order(desc(abpanel$conc_µg_per_mL), abpanel$Marker
 for(i in seq_along(markers)){
   curMarker.name <- markers[i]
   curMarker.DF1conc <- abpanel[curMarker.name, "conc_µg_per_mL"]
-  curLegend <- ifelse(i %in% c(1,16,31,46),TRUE,FALSE)
-  plot <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, legend=curLegend)
+  plot <- foot_plot_density_custom(marker=paste0("adt_",curMarker.name), conc=curMarker.DF1conc, legend=FALSE)
   plots[[i]] <- plot
 }
 
-pdf(file=file.path(outdir,"Supplementary Figure 1.pdf"), width=16, height=22)
-ggdraw(plot_grid(NULL, plot_grid(plotlist=plots[1:15],ncol=3, align="h", axis="tb"), ncol=1, rel_heights=c(1,70))) + draw_label(label="Figure S1A",x=0, y=1, hjust=0, vjust=0.98, size = 20)
-ggdraw(plot_grid(NULL, plot_grid(plotlist=plots[16:30],ncol=3, align="h", axis="tb"), ncol=1, rel_heights=c(1,70))) + draw_label(label="Figure S1B",x=0, y=1, hjust=0, vjust=0.98, size = 20)
-ggdraw(plot_grid(NULL, plot_grid(plotlist=plots[31:45],ncol=3, align="h", axis="tb"), ncol=1, rel_heights=c(1,70))) + draw_label(label="Figure S1C",x=0, y=1, hjust=0, vjust=0.98, size = 20)
-ggdraw(plot_grid(NULL, plot_grid(plotlist=plots[46:52],ncol=3, align="h", axis="tb"), NULL, ncol=1, rel_heights=c(1,70*(3/5),70*(2/5)))) + draw_label(label="Figure S1D",x=0, y=1, hjust=0, vjust=0.98, size = 20)
+png(file=file.path(outdir,"Supplementary Figure 1A.png"), units=figure.unit, res=figure.resolution, width=figure.width.full, height=10, antialias=figure.antialias)
+curPlots <- plot_grid(plotlist=plots[1:15],ncol=3, align="h", axis="tb")
+cowplot::plot_grid(NULL, p.legend, curPlots, vjust=-0.5, hjust=panel.label_hjust, label_size=panel.label_size, ncol=1, rel_heights= c(0.5, 1.3, 70))
+dev.off()
+```
+
+    ## png 
+    ##   2
+
+``` r
+png(file=file.path(outdir,"Supplementary Figure 1B.png"), units=figure.unit, res=figure.resolution, width=figure.width.full, height=10, antialias=figure.antialias)
+curPlots <- plot_grid(plotlist=plots[16:30],ncol=3, align="h", axis="tb")
+cowplot::plot_grid(NULL, p.legend, curPlots, vjust=-0.5, hjust=panel.label_hjust, label_size=panel.label_size, ncol=1, rel_heights= c(0.5, 1.3, 70))
+dev.off()
+```
+
+    ## png 
+    ##   2
+
+``` r
+png(file=file.path(outdir,"Supplementary Figure 1C.png"), units=figure.unit, res=figure.resolution, width=figure.width.full, height=10, antialias=figure.antialias)
+curPlots <- plot_grid(plotlist=plots[31:45],ncol=3, align="h", axis="tb")
+cowplot::plot_grid(NULL, p.legend, curPlots, vjust=-0.5, hjust=panel.label_hjust, label_size=panel.label_size, ncol=1, rel_heights= c(0.5, 1.3, 70))
+dev.off()
+```
+
+    ## png 
+    ##   2
+
+``` r
+png(file=file.path(outdir,"Supplementary Figure 1D.png"), units=figure.unit, res=figure.resolution, width=figure.width.full, height=10, antialias=figure.antialias)
+curPlots <- plot_grid(plotlist=plots[46:52],ncol=3, align="h", axis="tb")
+cowplot::plot_grid(NULL, p.legend, curPlots, NULL, vjust=-0.5, hjust=panel.label_hjust, label_size=panel.label_size, ncol=1, rel_heights= c(0.5, 1.3, 70*(3/5),70*(2/5)))
 dev.off()
 ```
 
