@@ -1,5 +1,5 @@
 ## A bit of a hacked version of the foot plot for fast plotting of individual markers.
-foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue", group="dilution", color=color.dilution, trans="biexp", legend=TRUE){
+foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue", group="dilution", color=color.dilution, trans="biexp", legend=TRUE, yaxis.text=FALSE){
   library("cowplot")
     curMarker <- FetchData(object, vars=c(marker,"supercluster",group,wrap), slot = "counts")
     colnames(curMarker)[1:3] <- c("count","supercluster","group")
@@ -65,7 +65,7 @@ foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue"
     #                aes(label=paste0(group,": ",sprintf("%05s",as.character(sum)))), 
     #                y=Inf, x=Inf, hjust=0, vjust=0, direction="y", segment.alpha=0, seed=114, size=3)
     
-    p.foot <- foot_plot_flip(curMarker$count, group=curMarker$group, linetype=curMarker$group, wrap=curWrap, barcodeGroup=curMarker$supercluster, barcode.stepSize=0.4, draw.points = F, draw.barcode = T, draw.line = T, barcode.refGroups=levels(curMarker$group)[1], trans=trans) + 
+    p.foot <- foot_plot_flip(curMarker$count, group=curMarker$group, linetype=curMarker$group, wrap=curWrap, barcodeGroup=curMarker$supercluster, barcode.stepSize=0.4, draw.points = F, draw.barcode = T, draw.line = T, barcode.refGroups=levels(curMarker$group)[1], trans=trans, colors=color.supercluster) + 
       theme(strip.text = element_blank(), 
             plot.margin = unit(c(0,0.3,0,0),"cm"), 
             legend.direction = "vertical",
@@ -75,12 +75,16 @@ foot_plot_density_custom <- function(marker,conc=NULL, gates=NULL, wrap="tissue"
             legend.justification=c(1,0),
             axis.title=element_blank(),
             axis.text.y=element_blank()) + 
-      guides(linetype=F, col=guide_legend(override.aes = list(shape = 15)), group=F) + ylab("UMI count")
+      guides(linetype=F, col=guide_legend(override.aes = list(shape = 15)), group=F) + ylab("UMI count") + xlab("Cell ranking")
     #geom_text_repel(data=curMarker.sum, aes(label=paste0(group,": ",sprintf("%06s",as.character(sum)))), y=-ggforce::trans_reverser(trans)$transform(max(curMarker$count)*0.5), x=-Inf, xlim=c(0.02,1), hjust=1, vjust=-1, direction="y", segment.alpha=0, seed=114, size=3)
     
     
     if(legend == FALSE){
       p.foot <- p.foot + theme(legend.position="none")
+    }
+    
+    if(yaxis.text == TRUE){
+      p.foot <- p.foot + theme(axis.title.y=element_text(size=6))
     }
     
     if(!is.null(gates)){
@@ -221,24 +225,26 @@ knee_plot_auc <- function(bc_rank) {
     distinct() %>% 
     dplyr::filter(total > 0)
   annot <- tibble(inflection = S4Vectors::metadata(bc_rank)[["inflection"]],
-                  rank_cutoff = max(bc_rank$rank[bc_rank$total > S4Vectors::metadata(bc_rank)[["inflection"]]]),
+                  rank_cutoff = length(which(bc_rank$total > S4Vectors::metadata(bc_rank)[["inflection"]])),
                   knee = S4Vectors::metadata(bc_rank)[["knee"]],
-                  knee_cutoff = max(bc_rank$rank[bc_rank$total > S4Vectors::metadata(bc_rank)[["knee"]]]))
+                  knee_cutoff = length(which(bc_rank$total > S4Vectors::metadata(bc_rank)[["knee"]])))
   p <- ggplot(knee_plt, aes(total, rank)) +
     geom_line() +
     geom_ribbon(aes(xmin = 0, xmax = total, fill = rank > annot$rank_cutoff), alpha=0.5) + 
     geom_hline(data=annot,aes(yintercept = rank_cutoff), linetype = 2) +
-    geom_label(data=annot,aes(y=rank_cutoff,x=Inf,label=rank_cutoff), hjust=1, vjust=0) + 
+    geom_label(data=annot,aes(y=rank_cutoff,x=Inf,label=rank_cutoff), hjust=1, vjust=1) + 
     scale_fill_manual(values=c("black","grey"), labels=c("Cell","EmptyDrop")) + 
     scale_x_log10(expand=c(0,0,0.05,0)) +
     scale_y_log10(expand=c(0,0,0.05,0)) +
     annotation_logticks() +
     labs(y = "Rank", x = "Total UMIs") + 
     guides(fill=guide_legend(override.aes=list(alpha=1, color="black"))) + 
-    theme(legend.position=c(1,.99), 
+    theme(legend.position=c(1,1), 
           legend.justification=c(1,1), 
           legend.title=element_blank(),
-          legend.direction="vertical")
+          legend.direction="vertical",
+          legend.key.size=unit(0.3,"cm"),
+          legend.background=element_blank())
   return(p)
 }
 
@@ -261,9 +267,9 @@ knee_plot_highlight <- function(bc_rank, highlight=c()) {
   
   p <- ggplot(knee_plt, aes(total, rank)) +
     #geom_point(data=data.highlight,aes(x=1), shape="-", size=1, alpha=.2) + 
-    geom_segment(data=data.highlight[data.highlight$rank > cutoff,],aes(x=0, xend=total, yend=rank), size=0.001, color="black", alpha=1, show.legend=FALSE) + 
-    geom_rect(data=data.highlight[data.highlight$rank <= cutoff,],aes(xmin=0, xmax=total, ymin=rank-0.5, ymax=rank+0.5), fill="black", alpha=1) + 
-    geom_line(color="grey") +    
+    #geom_segment(data=data.highlight[data.highlight$rank > cutoff,],aes(x=0, xend=total, yend=rank), size=0.001, color="black", alpha=1, show.legend=FALSE) + 
+    #geom_rect(data=data.highlight[data.highlight$rank <= cutoff,],aes(xmin=0, xmax=total, ymin=rank-0.5, ymax=rank+0.5), fill="black", alpha=1) + 
+    geom_line(color="black") +    
     #geom_ribbon(data=data.highlight, aes(xmin = 0, xmax = total), fill="black", alpha=0.5) +
     #geom_segment(data=knee_plt[-c(knee_plt$barcode %in% highlight | knee_plt$rank > max(data.highlight$rank)),],aes(x=0, xend=total, yend=rank, size=(10/(10^rank))), color="white", alpha=0.05, show.legend=FALSE) + 
     # to show emptyDroplets within dense cell area

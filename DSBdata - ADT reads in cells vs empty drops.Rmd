@@ -1,0 +1,201 @@
+---
+title: "CITE-seq optimization - DSB data: ADT in cells vs empty drops"
+author: "Terkild Brink Buus"
+date: "30/3/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set()
+options(stringsAsFactors=FALSE)
+```
+
+## Load libraries etc.
+
+```{r}
+set.seed(114)
+require("Seurat", quietly=T)
+require("tidyverse", quietly=T)
+require("Matrix", quietly=T)
+require("DropletUtils", quietly=T)
+
+## Load ggplot theme and defaults
+source("R/ggplot_settings.R")
+
+## Load helper functions (ggplot themes, biexp transformation etc.)
+source("R/Utilities.R")
+
+## Load predefined color schemes
+source("R/color.R")
+
+data.drive <- "F:"
+data.cells <- file.path(data.drive,"/Data/DSBdata","H1_day0_demultilexed_singlets.RDS")
+data.empty <- file.path(data.drive,"/Data/DSBdata","neg_control_object.rds")
+data.conc <- file.path(data.drive,"/Data/DSBdata","Antibody_concentration.xlsx")
+outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
+```
+
+```{r}
+cells <- readRDS(data.cells)
+empty <- readRDS(data.empty)
+
+ADT.cells <- cells@assay$CITE@raw.data
+ADT.empty <- empty@assay$CITE@raw.data
+
+renameRows <- function(names){
+  names <- gsub("_PROT","",names)
+  names <- gsub("Mouse IgG2bkIsotype","mIgG2b",names)	
+  names <- gsub("MouseIgG1kappaisotype","mIgG1",names)
+  names <- gsub("MouseIgG2akappaisotype","mIgG2a",names)
+  names <- gsub("RatIgG2bkIsotype","rIgG2b",names)
+  names <- gsub(" $","",names)
+}
+
+rownames(ADT.cells) <- renameRows(rownames(ADT.cells))
+rownames(ADT.empty) <- renameRows(rownames(ADT.empty))
+
+ADT.cells.marker <- Matrix::rowSums(ADT.cells)
+ADT.cells.marker.freq <- ADT.cells.marker/sum(ADT.cells.marker)
+ADT.empty.marker <- Matrix::rowSums(ADT.empty)
+ADT.empty.marker.freq <- ADT.empty.marker/sum(ADT.empty.marker)
+
+ADT.cellToEmptyRatio <- ADT.cells.marker.freq/ADT.empty.marker.freq
+ 
+abpanel <- data.frame(readxl::read_excel(data.conc))
+abpanel$Marker <- abpanel$Rename
+rownames(abpanel) <- abpanel$Marker
+
+setdiff(rownames(abpanel),rownames(ADT.empty))
+setdiff(rownames(ADT.empty),rownames(abpanel))
+
+plotData <- data.frame(ratio=ADT.cellToEmptyRatio) %>% mutate(Marker=rownames(.), conc=abpanel[rownames(.),"conc"], subset=abpanel[rownames(.),"Most.positive.subset"]) %>% arrange(conc, ratio)
+
+plotData$Marker <- factor(plotData$Marker, levels=plotData$Marker)
+
+p.ratio <- ggplot(plotData, aes(x=Marker, y=log2(ratio))) + 
+  geom_bar(stat="identity", aes(fill=log2(ratio)>0), color="black", width=0.65) +
+  geom_hline(yintercept=0) + 
+  scale_fill_manual(values=c(`FALSE`="lightgrey",`TRUE`="black")) + 
+  ggnewscale::new_scale_fill() + 
+  geom_rect(aes(xmin=-Inf,xmax=Inf,ymin=-2.5,ymax=-2.75,fill=conc), col="black") + 
+  geom_text(data=plotData %>% group_by(conc) %>% summarize(length=n()) %>% mutate(subset="Cell"),aes(x=1,label=conc, y=-2.67), adj=0, vjust=0.5, size=2.5) + 
+  scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10), limits=c(0.013,10)) + 
+  scale_x_discrete(expand=c(0, 0.5)) + 
+  scale_y_continuous(expand=c(0,0.05,0,0)) + 
+  labs(y="UMI Frequency", fill="µg/mL") + 
+  theme(panel.border=element_blank(), 
+        panel.grid=element_blank(), 
+        panel.spacing=unit(0.5,"mm"),
+        axis.line=element_line(), 
+        axis.title.x=element_blank(), 
+        strip.placement="outside", 
+        strip.text=element_blank(), 
+        legend.position=c(0.01,1), 
+        legend.justification=c(0,1),
+        legend.direction="horizontal",
+        legend.text.align=0, 
+        legend.key.width=unit(0.3,"cm"), 
+        legend.key.height=unit(0.4,"cm"), 
+        legend.text=element_text(size=unit(5,"pt"))) +
+  facet_grid(cols=vars(-conc), scales="free_x", space="free_x")
+  
+```
+
+## Concentration bias in empty droplets?
+
+Do antibodies used in high concentration dominate the empty drops?
+
+ADT
+
+```{r}
+
+
+plotData <- rbind(data.frame(count=ADT.cells.marker, freq=ADT.cells.marker.freq, subset="Cell", marker=names(ADT.cells.marker)), data.frame(count=ADT.empty.marker, freq=ADT.empty.marker.freq, subset="EmptyDrop", marker=names(ADT.empty.marker)))
+
+plotData$conc <- abpanel[plotData$marker,"conc"]
+plotData$marker <- factor(plotData$marker, levels=plotData$marker[order(plotData$conc[plotData$subset=="EmptyDrop"],plotData$freq[plotData$subset=="EmptyDrop"])])
+
+scaleFUN <- function(x) sprintf("%.2f", x)
+## MAYBE COMPARE ROW SUMS FROM READS vs UMI FROM CSC.
+
+plotData <- plotData[order(plotData$marker, decreasing=TRUE),]
+plotData$highlight <- 0
+#plotData$highlight[which(plotData$marker == plotData$marker[plotData$freq >= 0.05] & plotData$subset == "EmptyDrop")]
+highfreq <- which(plotData$marker %in% plotData$marker[plotData$freq >= 0.05])
+plotData$highlight[c(highfreq)] <- 1
+plotData$label <- plotData$marker
+max.label <- plotData[plotData$freq >= 0.05,] %>% group_by(marker) %>% summarize(subset.max=subset[which.max(freq)])
+
+plotData$label[(paste(plotData$marker,plotData$subset) %in% paste(max.label$marker,max.label$subset.max))==FALSE | plotData$freq < 0.05] <- NA
+
+plotData$cummulativeFreq <- 0
+plotData$cummulativeFreq[plotData$subset=="EmptyDrop"] <- cumsum(plotData$freq[plotData$subset=="EmptyDrop"])
+plotData$cummulativeFreq[plotData$subset=="Cell"] <- cumsum(plotData$freq[plotData$subset=="Cell"])
+p.gradient.hb.width <- 0.25
+
+p.gradient.hb <- ggplot(plotData, aes(x=factor(as.character(subset), levels=c("EmptyDrop","Cell")), y=freq, fill=conc, group=marker)) + 
+  geom_bar(stat="identity", position="stack", col=alpha("black",0.5), width=p.gradient.hb.width) + 
+  scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + 
+  scale_y_continuous(expand=c(0,0,0,0), position="right") + 
+  scale_x_discrete(expand=c(0,0,0,0)) + 
+  labs(fill="µg/mL") + 
+  theme(panel.grid=element_blank(), axis.title.y=element_blank(), axis.text.x=element_text(angle=0, hjust=0.5, vjust=0.5)) + coord_flip(clip="off") + labs(y="UMI frequency (cells versus empty drops)")
+
+p.gradient.hb2 <- p.gradient.hb + 
+  geom_text(aes(y=cummulativeFreq-(freq/2), label=label), na.rm=TRUE, vjust=0.5, hjust=0.5,  angle=0, size=1.5, fontface="bold") + 
+  theme(plot.margin=unit(c(0,0.2,0.2,0),"cm")) + 
+  guides(alpha=FALSE)
+
+plotData$xval <- (2-p.gradient.hb.width/2)
+plotData$xval[plotData$subset == "EmptyDrop"] <- (1+p.gradient.hb.width/2)
+plotData.poly2 <- plotData
+plotData.poly2$cummulativeFreq <- plotData.poly2$cummulativeFreq-plotData.poly2$freq
+plotData.poly <- rbind(plotData.poly2[order(plotData.poly2$marker, -plotData.poly2$xval, -plotData.poly2$cummulativeFreq, decreasing=TRUE),],plotData[order(plotData$marker, -plotData$xval, -plotData$cummulativeFreq, decreasing=FALSE),])
+
+plotData.poly[plotData.poly$marker == "TCRgd",]
+
+p.gradient.hb4 <- p.gradient.hb2 + 
+  geom_polygon(data=plotData.poly, aes(x=xval,y=cummulativeFreq, group=marker, fill=conc, size=factor(highlight), col=factor(highlight)), alpha=0.5) + 
+  scale_size_manual(values=c("0"=0.15, "1"=0.25)) + 
+  scale_color_manual(values=c("0"=alpha("black",0.1), "1"=alpha("black",1)))
+
+p.gradient.hb4
+
+plotData$marker.rev <- factor(as.character(plotData$marker), levels=rev(levels(plotData$marker)))
+plotData$subset <- factor(plotData$subset, levels=c("EmptyDrop","Cell"))
+
+p.barplot <- ggplot(plotData, aes(x=marker, y=freq, fill=subset)) + 
+  geom_bar(stat="identity", position="dodge", color="black", width=0.65) + 
+  geom_hline(yintercept=0, col="black") + 
+  scale_fill_manual(values=c("EmptyDrop"="lightgrey","Cell"="black")) + 
+  ggnewscale::new_scale_fill() + 
+  geom_rect(aes(xmin=-Inf,xmax=Inf,ymin=-0.005,ymax=-0.001,fill=conc), col="black") + 
+  geom_text(data=plotData %>% group_by(conc) %>% summarize(length=n()) %>% mutate(subset="Cell"),aes(x=1,label=conc, y=-0.005), angle=90, adj=0, vjust=1, size=2.5) + 
+  scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10), limits=c(0.013,10)) + 
+  scale_x_discrete(expand=c(0, 0.5)) + 
+  scale_y_continuous(expand=c(0.005,0,0,0)) + 
+  labs(y="UMI Frequency", fill="µg/mL") + 
+  theme(panel.border=element_blank(), 
+        panel.grid=element_blank(), 
+        panel.spacing=unit(0.5,"mm"),
+        axis.line=element_line(), 
+        axis.title.y=element_blank(), 
+        strip.placement="outside", 
+        strip.text=element_blank(), 
+        legend.position=c(1,0), 
+        legend.justification=c(1,0),
+        #legend.direction="horizontal",
+        legend.text.align=0, 
+        legend.key.width=unit(0.3,"cm"), 
+        legend.key.height=unit(0.4,"cm"), 
+        legend.text=element_text(size=unit(5,"pt"))) +
+  coord_flip() + 
+  facet_grid(rows=vars(-conc), scales="free_y", space="free_y")
+
+#ragg::agg_png
+#png(file=file.path(outdir,"Figure 5.png"), width=figure.width.full, height=3.2, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
+cowplot::plot_grid(p.barplot, p.gradient.hb4 + theme(legend.position="none"), ncol=1, rel_heights=c(3.2,1), align="v", axis="lr", labels=c("A", "B"), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust)
+#dev.off()
+
+```
+

@@ -16,164 +16,19 @@ options(stringsAsFactors=FALSE)
 set.seed(114)
 require("Seurat")
 require("tidyverse")
-theme_set(theme_bw() + 
-          theme(
-            axis.text.x=element_text(angle=45, hjust=1), 
-            panel.grid.minor = element_blank(), 
-            strip.background=element_blank(), 
-            strip.text=element_text(face="bold", size=10)))
 require("ggrepel")
+require(cowplot)
 
-data10XADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_A1/outs/raw_feature_bc_matrix"
-dataCSCADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/umi_count"
+## Load ggplot theme and defaults
+source("R/ggplot_settings.R")
 
 ## Load helper functions (ggplot themes, biexp transformation etc.)
 source("R/Utilities.R")
+
 ## Load predefined color schemes
 source("R/color.R")
 
 outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
-```
-
-## Load Seurat object
-
-```{r loadSeurat}
-object <- readRDS(file="data/5P-CITE-seq_Titration.rds")
-
-## Subset object to focus on samples with dilution factor 1
-#object <- subset(object, subset=dilution=="DF1")
-```
-
-## Load in alternative counters
-
-```{r}
-object <- subset(object, cells=which(colnames(object) != "ACGCCAGAGGTGGGTT"))
-
-object[["ADT.cellranger"]] <- CreateAssayObject(counts=Read10X(data.dir=data10XADTDir)[,colnames(object)])
-
-data.CSC <- Read10X(data.dir=dataCSCADTDir, gene.column=1)
-data.CSC <- data.CSC[rownames(data.CSC) != "unmapped",]
-object[["ADT.csc"]] <- CreateAssayObject(counts=data.CSC[,colnames(object)])
-```
-
-## Compare UMI counts per cell across methods
-
-```{r}
-plotData <- FetchData(object,vars=c("sampleID","nCount_ADT.kallisto","nCount_ADT.cellranger","nCount_ADT.csc"))
-
-
-ggplot(plotData,aes(x=nCount_ADT.kallisto,y=nCount_ADT.cellranger,col=sampleID)) + geom_point() + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
-ggplot(plotData,aes(x=nCount_ADT.kallisto,y=nCount_ADT.csc,col=sampleID)) + geom_point() + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
-ggplot(plotData,aes(x=nCount_ADT.cellranger,y=nCount_ADT.csc,col=sampleID)) + geom_point() + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
-
-colnames(plotData) <- gsub("nCount_ADT.","",colnames(plotData))
-plotData <- plotData[order(rowSums(plotData[,-1]),decreasing=TRUE),]
-plotData$rank <- seq_along(plotData$sampleID)
-plotData <- reshape2::melt(plotData[,-1],id.vars=c("rank"))
-colnames(plotData) <- c("Rank","Counter","value")
-ggplot(plotData,aes(x=Rank,y=value,col=Counter,group=Counter)) + geom_point(alpha=0.5,size=1) + scale_y_continuous(trans="log10") + ylab("Sum of UMIs") + xlab("Barcode rank")
-```
-
-## Marker sums
-
-```{r}
-assays <- c("ADT.kallisto","ADT.cellranger","ADT.csc")
-#assays <- c("ADT.cellranger","ADT.cellrangerComplete")
-plotData <- sapply(assays,function(x){
-        y <- GetAssayData(object, assay=x ,slot="counts")
-        y <- apply(y,1,sum)
-    })
-
-plotData <- as.data.frame(plotData)
-plotData$Marker <- rownames(plotData)
-ggplot(data.frame(plotData),aes(x=ADT.kallisto,y=ADT.cellranger)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.cellranger-ADT.kallisto)/mean(c(ADT.cellranger,ADT.kallisto)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
-ggplot(data.frame(plotData),aes(x=ADT.kallisto,y=ADT.csc)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.csc-ADT.kallisto)/mean(c(ADT.csc,ADT.kallisto)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
-ggplot(data.frame(plotData),aes(x=ADT.cellranger,y=ADT.csc)) + geom_point() + geom_text_repel(data=plotData[with(plotData,(abs(ADT.csc-ADT.cellranger)/mean(c(ADT.csc,ADT.cellranger)))>0.10),],aes(label=Marker)) + geom_abline(slope=1,lty="dashed") + scale_y_continuous(trans="log10") + scale_x_continuous(trans="log10")
-```
-
-```{r}
-plotData <- sapply(assays,function(x){
-        y <- GetAssayData(object, assay=x ,slot="counts")
-        y <- apply(y,1,sum)
-    })
-plotData <- plotData[order(rowMeans(plotData),decreasing=TRUE),]
-plotData <- reshape2::melt(plotData)
-colnames(plotData) <- c("Marker","Counter","value")
-ggplot(plotData,aes(x=Marker,y=value,col=Counter,group=Counter)) + geom_line() + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1)) + scale_y_log10() + ylab("UMI count") + xlab("")
-
-```
-
-## Rank plots
-
-```{r}
-#source("R/foot_plot.R")
-
-data.compareCounter <- FetchData(object, vars=c("nCount_ADT.kallisto", "nCount_ADT.csc", "nCount_ADT.cellranger", "supercluster", "tissue"))
-colnames(data.compareCounter)[1:3] <- c("kallisto","csc","cellranger")
-data.compareCounter <- data.compareCounter[order(data.compareCounter$kallisto, decreasing = T),]
-data.compareCounter$rank <- seq_along(data.compareCounter$kallisto)
-data.compareCounter[,1:3] <- data.compareCounter[,c("kallisto","csc","cellranger")]-data.compareCounter[,"csc"]#apply(data.compareCounter[,1:3],1,min)
-data.compareCounter$cell <- rownames(data.compareCounter)
-data.compareCounter <- data.compareCounter %>% pivot_longer(c(-cell, -supercluster, -tissue, -rank))
-
-ggplot(data.compareCounter,aes(x=rank,y=value,color=name,group=name)) + geom_line() + scale_y_log10()
-
-foot_plot(data.compareCounter$value, wrap=data.compareCounter$tissue, group=data.compareCounter$name, color=data.compareCounter$name, barcodeGroup=data.compareCounter$supercluster, draw.barcode=TRUE, draw.points=FALSE, draw.line=TRUE, trans="biexp1000")
-
-curMarker <- "CD1a"
-data.compareCounter <- FetchData(object, vars=c("supercluster","tissue"))
-data.compareCounter <- cbind(data.compareCounter,kallisto=object@assays$ADT.kallisto@counts[curMarker,],csc=object@assays$ADT.csc@counts[grep(curMarker,rownames(object[["ADT.csc"]])),], cellranger=object@assays$ADT.cellranger@counts[curMarker,])
-data.compareCounter$cell <- rownames(data.compareCounter)
-data.compareCounter <- data.compareCounter[order(data.compareCounter$kallisto, decreasing = T),]
-data.compareCounter$rank <- seq_along(data.compareCounter$kallisto)
-data.compareCounter[,c("kallisto","csc","cellranger")] <- data.compareCounter[,c("kallisto","csc","cellranger")]-data.compareCounter[,"csc"]
-
-data.compareCounter <- data.compareCounter %>% pivot_longer(c(-cell, -supercluster, -tissue, -rank))
-
-ggplot(data.compareCounter,aes(x=rank,y=value,color=name,group=name)) + geom_point(alpha=0.2) + ylim(c(-5,20))
-
-foot_plot(data.compareCounter$value, wrap=data.compareCounter$tissue, group=data.compareCounter$name, color=data.compareCounter$name, barcodeGroup=data.compareCounter$supercluster, draw.barcode=TRUE, draw.points=FALSE,draw.line=TRUE)
-```
-
-## UMI per marker per cell correlations
-
-```{r}
-assays <- c("ADT.kallisto","ADT.cellranger","ADT.csc")
-names(assays) <- assays
-
-ADTdata <- lapply(assays, function(x)GetAssayData(object, assay=x, slot="counts"))
-rownames(ADTdata$ADT.csc) <- rownames(ADTdata$ADT.kallisto)
-ADTdata <- lapply(ADTdata, function(x) as.data.frame(x) %>% mutate(marker=rownames(x)) %>% pivot_longer(-marker))
-
-ADTdata.DF <- ADTdata %>% purrr::reduce(inner_join, by=c("marker","name"), )
-colnames(ADTdata.DF)[-c(1:2)] <- assays
-head(ADTdata.DF)
-
-dim(ADTdata.DF)
-ADTdata.DF <- ADTdata.DF[apply(ADTdata.DF[,-c(1:2)],1,sum) > 0,]
-dim(ADTdata.DF)
-
-p.methodCorr <- list()
-
-p.methodCorr[["KvsR"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.cellranger+1)) + 
-    labs(x="Kallisto-bustools KITE", y="Cellranger featureOnly")
-    
-p.methodCorr[["KvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.csc+1)) + 
-    labs(x="Kallisto-bustools KITE", y="CITE-seq Count")
-
-p.methodCorr[["RvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.cellranger+1, y=ADT.csc+1)) + 
-    labs(x="Cellranger featureOnly", y="CITE-seq Count")
-
-curLimit <- 4050
-p.methodCorrAdd <- lapply(p.methodCorr, function(x){
-    x + geom_point(aes(color=marker), alpha=0.25) + 
-    geom_abline(slope=1, linetype="dashed", col="black", size=1, alpha=0.25) + 
-    scale_x_log10(limits=c(1,curLimit)) + scale_y_log10(limits=c(1,curLimit)) + 
-    annotation_logticks() + 
-    theme(aspect.ratio = 1, legend.position="none")
-})
-
-UMIsum <- colSums(ADTdata.DF[,-c(1:2)])
 
 ```
 
@@ -182,11 +37,8 @@ UMIsum <- colSums(ADTdata.DF[,-c(1:2)])
 All analysis was run on the NYU Medical Center computing cluster "BigPurple" on a "fat_node" with an allocated 16 cores and 64GB memory.
 
 ```{r}
-time <- data.frame(ADT=c("kallisto"="7m54.320s", "cellranger"="348m21.313s", "csc"="173m29.692s"),
-                   HTO=c("kallisto"="4m12.157s", "cellranger"="233m7.943s", "csc"="160m40.705s"))
-
-time.s <- data.frame(ADT=c("kallisto"=474, "cellranger"=20901, "csc"=10410, "csc_nc"=6541,), 
-                     HTO=c("kallisto"=252, "cellranger"=13988, "csc"=9641, "csc_nc"=4051,),
+time.s <- data.frame(ADT=c("kallisto"=474, "cellranger"=20901, "csc"=10410, "csc_nc"=6541), 
+                     HTO=c("kallisto"=252, "cellranger"=13988, "csc"=9641, "csc_nc"=4051),
                      PBMC10k_3P=c("kallisto"=591, "cellranger"=16940, "csc"=22645, "csc_nc"=14420),
                      PBMC1k_3P=c("kallisto"=234, "cellranger"=4309, "csc"=3943, "csc_nc"=3336),
                      PBMC10k_5P=c("kallisto"=629, "cellranger"=11972, "csc"=24735, "csc_nc"=7652))
@@ -203,21 +55,41 @@ dataset.order <- c("ADT"=2,
                "PBMC1k_3P"=0, 
                "PBMC10k_5P"=4)
 
-aligned <- data.frame(ADT=c("kallisto"=82527351, "cellranger"=81355365, "csc"=81355365), 
-                     HTO=c("kallisto"=65875774, "cellranger"=66540087, "csc"=66540087),
-                     PBMC10k_3P=c("kallisto"=106650656, "cellranger"=105346468, "csc"=105787248),
-                     PBMC1k_3P=c("kallisto"=11517927, "cellranger"=11371198, "csc"=11345985),
-                     PBMC10k_5P=c("kallisto"=147360481, "cellranger"=145950841, "csc"=145496165))
+aligned <- data.frame(ADT=c("kallisto"=82527351, "cellranger"=81355365, "csc"=81355365, "csc_nc"=81355365), 
+                     HTO=c("kallisto"=65875774, "cellranger"=66540087, "csc"=66540087, "csc_nc"=66540087),
+                     PBMC10k_3P=c("kallisto"=106650656, "cellranger"=105346468, "csc"=105787248, "csc_nc"=105787248),
+                     PBMC1k_3P=c("kallisto"=11517927, "cellranger"=11371198, "csc"=11345985, "csc_nc"=11345985),
+                     PBMC10k_5P=c("kallisto"=147360481, "cellranger"=145950841, "csc"=145496165, "csc_nc"=145496165))
 
-time.s.long <- time.s %>% mutate(method=rownames(time.s)) %>% pivot_longer(-method)
 datasets <- data.frame(fastqsize)
 datasets <- datasets %>% mutate(Dataset=rownames(datasets))
 
 methods <- c("cellranger"="CellRanger featureOnly",
              "csc"="CITE-seq-Count",
+             "csc_nc"="CITE-seq-Count\n(no UMI correction)",
              "kallisto"="Kallisto-bustools KITE")
 
-p.runtime <- ggplot(time.s.long, aes(x=(fastqsize[name]/10^6),col=methods[method],y=value/60,group=method)) + 
+aligned.long <- aligned %>% mutate(method=rownames(aligned)) %>% pivot_longer(-method)
+
+p.alignedReads <- ggplot(aligned.long,aes(x=method,y=value/10^6,fill=method)) + 
+    geom_bar(stat="identity", color="black") + 
+    scale_y_continuous(expand=c(0,0,0.05,0)) + 
+    labs(y=bquote("Assigned reads ("~10^6~")"), x="Method") + 
+    facet_wrap(~name, scales="free_y", nrow=1, strip.position = "bottom") + 
+    theme(panel.grid=element_blank(), 
+          panel.border=element_blank(), 
+          axis.line=element_line(),
+          legend.position="none",
+          strip.placement="outside",
+          strip.text=element_blank(),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank())
+
+p.alignedReads
+
+time.s.long <- time.s %>% mutate(method=rownames(time.s)) %>% pivot_longer(-method)
+
+p.runtime.lineplot <- ggplot(time.s.long, aes(x=(fastqsize[name]/10^6),col=methods[method],y=value/60,group=method)) + 
     geom_line() + 
     geom_point() + 
     geom_vline(data=datasets,aes(xintercept=fastqsize/10^6), linetype="dashed", alpha=0.25) + 
@@ -228,29 +100,323 @@ p.runtime <- ggplot(time.s.long, aes(x=(fastqsize[name]/10^6),col=methods[method
     labs(x=bquote("Total reads ("~10^6~")"), y="Runtime (Minutes)") + 
     theme(legend.position="none")
 
-aligned.long <- aligned %>% mutate(method=rownames(aligned)) %>% pivot_longer(-method)
-aligned.long$name <- factor(aligned.long$name, levels=names(dataset.order)[order(dataset.order)])
+p.runtime <- ggplot(time.s.long,aes(x=method,y=value/60,fill=method)) + 
+    geom_bar(stat="identity", color="black") + 
+    scale_y_log10(expand=c(0,0,0.05,0)) + 
+    annotation_logticks(sides = "l", size=0.25) + 
+    labs(x="Method", y="Minutes") + 
+    facet_wrap(~name, scales="free_y", nrow=1, strip.position = "bottom") + 
+    theme(panel.grid=element_blank(), 
+          panel.border=element_blank(), 
+          axis.line=element_line(),
+          legend.position="none",
+          strip.placement="outside",
+          strip.text=element_blank(),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank())
 
-p.alignedReads <- ggplot(aligned.long, aes(x=name,fill=methods[method],y=value/10^6)) + 
-    geom_bar(stat="identity", position="dodge", col="black") + 
+
+p.runtime
+
+```
+
+## Determine ADT counts in cells vs empty drops.
+
+Based on GEX inflection point
+
+```{r}
+load("data/data.HTO.Rdata")
+load("data/data.ADT.Rdata")
+
+ADT.totalUMI <- c("kallisto"=sum(kallisto.ADT),"csc"=sum(CSC.ADT),"csc_nc"=sum(CSC.ADT.uncorrected),"cellranger"=sum(cellranger.ADT))
+ADT.UMIincell <- c("kallisto"=sum(kallisto.ADT[,gex.aboveInf]),"csc"=sum(CSC.ADT[,intersect(colnames(CSC.ADT),gex.aboveInf)]),"csc_nc"=sum(CSC.ADT.uncorrected[,intersect(colnames(CSC.ADT.uncorrected),gex.aboveInf)]),"cellranger"=sum(cellranger.ADT[,gex.aboveInf]))
+ADT.UMIindrops <- ADT.totalUMI - ADT.UMIincell
+
+ADT <- data.frame(method=names(ADT.totalUMI),Cell=ADT.UMIincell,EmptyDrop=ADT.UMIindrops)
+ADT$dataset <- "ADT"
+
+HTO.totalUMI <- c("kallisto"=sum(kallisto.HTO),"csc"=sum(CSC.HTO),"csc_nc"=sum(CSC.HTO.uncorrected),"cellranger"=sum(cellranger.HTO))
+HTO.UMIincell <- c("kallisto"=sum(kallisto.HTO[,gex.aboveInf]),"csc"=sum(CSC.HTO[,intersect(colnames(CSC.HTO),gex.aboveInf)]),"csc_nc"=sum(CSC.HTO.uncorrected[,intersect(colnames(CSC.HTO.uncorrected),gex.aboveInf)]),"cellranger"=sum(cellranger.HTO[,gex.aboveInf]))
+HTO.UMIindrops <- HTO.totalUMI - HTO.UMIincell
+
+HTO <- data.frame(method=names(HTO.totalUMI),Cell=HTO.UMIincell,EmptyDrop=HTO.UMIindrops)
+HTO$dataset <- "HTO"
+
+#plotData <- rbind(ADT,HTO)
+#plotData <- plotData %>% pivot_longer(c(-method,-dataset))
+#plotData$name <- factor(plotData$name, levels=c("EmptyDrop","Cell"))
+
+#ggplot(plotData,aes(x=method,y=value/10^6,fill=method, alpha=name)) + geom_bar(stat="identity", color="black") + scale_alpha_manual(values=c("EmptyDrop"=0.5,"Cell"=1)) + facet_wrap(~dataset, scales="free_y")
+
+``` 
+
+## Draw UMI count plots
+
+```{r}
+load("data/data.10X.datasets.Rdata")
+
+plotData <- rbind(ADT,HTO)
+for(i in seq_along(data.10X.datasets)){
+  dataset <- data.10X.datasets[i]
+  
+  cells <- data.10X.datasets.gex.aboveInf[[dataset]]
+  kallisto <- data.10X.datasets.adt.kallisto[[dataset]]
+  csc <- data.10X.datasets.adt.csc[[dataset]]
+  csc_nc <- data.10X.datasets.adt.csc_nc[[dataset]]
+  cellranger <- data.10X.datasets.adt.cellranger[[dataset]]
+  
+  totalUMI <- c("kallisto"=sum(kallisto),"csc"=sum(csc),"csc_nc"=sum(csc_nc),"cellranger"=sum(cellranger))
+  
+  # for some reason kallisto was lacking counts from a singlecell barcode "ACTTCCGAGACGAGCT" in 10k_v3 dataset.
+  UMIincell <- c("kallisto"=sum(kallisto[,intersect(colnames(kallisto),cells)]),"csc"=sum(csc[,cells]),"csc_nc"=sum(csc_nc[,cells]),"cellranger"=sum(cellranger[,cells]))
+  
+  UMIindrops <- totalUMI - UMIincell
+  
+  df <- data.frame(method=names(totalUMI),Cell=UMIincell,EmptyDrop=UMIindrops)
+  df$dataset <- dataset
+  
+  plotData <- rbind(plotData,df)
+}
+
+plotData <- plotData %>% pivot_longer(c(-method,-dataset))
+plotData$name <- gsub("EmptyDrop", "Empty", plotData$name)
+plotData$name <- gsub("Cell", "Cell-containing", plotData$name)
+plotData$name <- factor(plotData$name, levels=c("Empty","Cell-containing"))
+plotData$dataset <- c("ADT"="ADT",
+                      "HTO"="HTO",
+                      "PBMC_10k_GEXFeature_v3"="PBMC10k_3P", 
+                      "PBMC_1k_GEXFeature_v3"="PBMC1k_3P", 
+                      "PBMC_GEXFeatureVDJ_v1"="PBMC10k_5P")[plotData$dataset]
+
+p.UMIcounts <- ggplot(plotData,aes(x=method,y=value/10^6,fill=methods[method], alpha=name)) + 
+    geom_bar(stat="identity", color="black") + 
+    scale_alpha_manual(values=c("Empty"=0.5,"Cell-containing"=1), guide="legend") + 
     scale_y_continuous(expand=c(0,0,0.05,0)) + 
-    labs(y=bquote("Assigned reads ("~10^6~")"), x="Dataset") + 
-    theme(panel.border=element_blank(), 
-          panel.grid=element_blank(), 
-          axis.line=element_line(), 
+    labs(y=bquote("UMI count ("~10^6~")"), x="Method", alpha="Droplet", fill="Method") + 
+    guides(fill=guide_legend(ncol=2), alpha=guide_legend(ncol=1)) + 
+    facet_wrap(~dataset, scales="free_y", nrow=1, strip.position = "bottom") +  
+    theme(panel.grid=element_blank(), 
+          panel.border=element_blank(), 
+          axis.line=element_line(),
+          strip.placement="outside",
+          strip.text=element_text(size=6),
+          axis.text.x=element_blank(),
           axis.title.x=element_blank(),
-          legend.position=c(0,1), 
-          legend.justification=c(-0.1,1), 
-          legend.title=element_blank())
+          legend.key.size=unit(0.25,"cm"),
+          legend.key.height=unit(0.4,"cm"),
+#          legend.margin=margin(0.3,20,0.3,0.3,unit="pt"),
+          legend.text=element_text(size=5),
+          legend.title=element_text(size=6))
 
-library(cowplot)
-ABC <- plot_grid(p.alignedReads, p.runtime, labels=c("A", "B"), vjust=1, hjust=-0.5, align = "h", axis="tb", rel_widths = c(4,5))
-DEF <- plot_grid(plotlist=p.methodCorrAdd, align="h", axis="tb", labels=c("D","E","F"), nrow=1, hjust=-0.5, vjust=1) 
+p.legend <- cowplot::get_legend(p.UMIcounts)
+ggdraw(p.legend)
 
-plotFinal <- cowplot::plot_grid(ABC, DEF, align="v", axis="lr", ncol=1, rel_heights=c(3,2))
+ABC <- plot_grid(p.alignedReads, p.runtime, p.UMIcounts + theme(legend.position="none"), p.legend, labels=c("A", "B", "C"), ncol=1, rel_heights=c(1,1,1,0.25), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust)
+```
 
-png(file=file.path(outdir,"Figure 5.png"), width=8, height=7, units = "in", res=300)
+## UMI per marker per cell correlations
+
+```{r}
+#ADTdata <- list(kallisto.ADT[,gex.aboveInf], 
+#                cellranger.ADT[,gex.aboveInf], 
+#                CSC.ADT[,gex.aboveInf], 
+#                CSC.ADT.uncorrected[,gex.aboveInf])
+
+ADTdata <- list(kallisto.HTO[,gex.aboveInf], 
+                cellranger.HTO[,gex.aboveInf], 
+                CSC.HTO[,gex.aboveInf], 
+                CSC.HTO.uncorrected[,gex.aboveInf])
+
+
+assays <- c("ADT.kallisto","ADT.cellranger","ADT.csc", "ADT.csc_nc")
+names(assays) <- assays
+names(ADTdata) <- assays
+
+ADTdata <- lapply(ADTdata, function(x) as.data.frame(x) %>% mutate(marker=gsub("\\-[TGAC]+","",rownames(x))) %>% mutate(marker=gsub("^HTO","",marker)) %>% pivot_longer(-marker))
+
+ADTdata.DF <- bind_rows(ADTdata, .id="method")
+ADTdata.DF <- ADTdata.DF %>% pivot_wider(names_from = method, values_from = value)
+
+ADTdata.DF <- ADTdata.DF[rowSums(ADTdata.DF[,-c(1,2)]) > 0,]
+ADTdata.DF <- ADTdata.DF[sample(nrow(ADTdata.DF),nrow(ADTdata.DF)),]
+#ADTdata.DF <- ADTdata.DF[sample(nrow(ADTdata.DF),1000),]
+
+#ADTdata.DF.markerSum <- ADTdata.DF %>% group_by(marker)
+curLimit <- 40000
+p.methodCorr <- list()
+
+p.methodCorr[["KvsR"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.cellranger+1)) + 
+    labs(x="Kallisto-bustools KITE", y="Cellranger featureOnly")
+    
+p.methodCorr[["KvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.csc+1)) + 
+    labs(x="Kallisto-bustools KITE", y="CITE-seq Count")
+
+p.methodCorr[["KvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.csc_nc+1)) + 
+    labs(x="Kallisto-bustools KITE", y="CITE-seq Count\n(no UMI correction)")
+
+p.methodCorr[["RvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.cellranger+1, y=ADT.csc+1)) + 
+    labs(x="Cellranger featureOnly", y="CITE-seq Count")
+
+p.methodCorr[["RvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.cellranger+1, y=ADT.csc_nc+1)) + 
+    labs(x="Cellranger featureOnly", y="CITE-seq Count\n(no UMI correction)")
+
+p.methodCorr[["CvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.csc_nc+1, y=ADT.csc+1)) + 
+    labs(x="CITE-seq Count\n(no UMI correction)", y="CITE-seq Count")
+
+p.methodCorrAdd <- lapply(p.methodCorr, function(x){
+    x + 
+    geom_point(aes(color=marker), stroke=0, alpha=0.25, size=0.5) + 
+    geom_abline(slope=1, linetype="dashed", col="black", size=0.25, alpha=0.25) +
+    annotate(geom="rect", xmin=500, ymin=500, xmax=Inf, ymax=Inf, fill=NA, color=alpha("red",0.5), linetype="dashed") + 
+    scale_x_log10(limits=c(1,curLimit)) + scale_y_log10(limits=c(1,curLimit)) + 
+    annotation_logticks(size=0.25) + 
+    theme(aspect.ratio = 1, legend.position="none", plot.margin=unit(c(1,1,1,1),"mm"))
+})
+
+D <- plot_grid(plotlist=p.methodCorrAdd, align="hv", axis="tblr", ncol=2, label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust) 
+
+plotFinal <- cowplot::plot_grid(ABC, D, align="v", axis="lr", nrow=1, rel_widths=c(3,2.25))
+
+png(file=file.path(outdir,"Figure 6.png"), width=figure.width.full, height=4.5, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
 plotFinal
+dev.off()
+
+```
+
+## UMI per marker per cell correlations
+
+```{r}
+ADTdata <- list(kallisto.ADT[,gex.aboveInf], 
+                cellranger.ADT[,gex.aboveInf], 
+                CSC.ADT[,gex.aboveInf], 
+                CSC.ADT.uncorrected[,gex.aboveInf])
+
+
+assays <- c("ADT.kallisto","ADT.cellranger","ADT.csc", "ADT.csc_nc")
+names(assays) <- assays
+names(ADTdata) <- assays
+
+ADTdata <- lapply(ADTdata, function(x) as.data.frame(x) %>% mutate(marker=gsub("\\-[TGAC]+","",rownames(x))) %>% mutate(marker=gsub("^HTO","",marker)) %>% pivot_longer(-marker))
+
+ADTdata.DF <- bind_rows(ADTdata, .id="method")
+ADTdata.DF <- ADTdata.DF %>% pivot_wider(names_from = method, values_from = value)
+
+ADTdata.DF <- ADTdata.DF[rowSums(ADTdata.DF[,-c(1,2)]) > 0,]
+ADTdata.DF <- ADTdata.DF[sample(nrow(ADTdata.DF),nrow(ADTdata.DF)),]
+#ADTdata.DF <- ADTdata.DF[sample(nrow(ADTdata.DF),1000),]
+
+#ADTdata.DF.markerSum <- ADTdata.DF %>% group_by(marker)
+curLimit <- quantile(ADTdata.DF$ADT.csc_nc, probs=c(0.99999))
+p.methodCorr <- list()
+
+p.methodCorr[["KvsR"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.cellranger+1)) + 
+    labs(x="Kallisto-bustools KITE", y="Cellranger featureOnly")
+
+p.methodCorr[["KvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.csc_nc+1)) + 
+    labs(x="Kallisto-bustools KITE", y="CITE-seq Count\n(no UMI correction)")
+
+p.methodCorr[["RvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.cellranger+1, y=ADT.csc_nc+1)) + 
+    labs(x="Cellranger featureOnly", y="CITE-seq Count\n(no UMI correction)") 
+
+p.methodCorr[["KvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.csc+1)) + 
+    labs(x="Kallisto-bustools KITE", y="CITE-seq Count")
+
+p.methodCorr[["RvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.cellranger+1, y=ADT.csc+1)) + 
+    labs(x="Cellranger featureOnly", y="CITE-seq Count")
+
+p.methodCorr[["CvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.csc_nc+1, y=ADT.csc+1)) + 
+    labs(x="CITE-seq Count\n(no UMI correction)", y="CITE-seq Count")
+
+p.methodCorrAdd <- lapply(p.methodCorr, function(x){
+    x + 
+    geom_point(aes(color=marker), stroke=0, alpha=0.25, size=0.5) + 
+    geom_abline(slope=1, linetype="dashed", col="black", size=0.25, alpha=0.25) +
+    annotate(geom="rect", xmin=500, ymin=500, xmax=Inf, ymax=Inf, fill=NA, color=alpha("red",0.5), linetype="dashed") + 
+    scale_x_log10(limits=c(1,curLimit)) + scale_y_log10(limits=c(1,curLimit)) + 
+    annotation_logticks(size=0.25) + 
+    theme(aspect.ratio = 1, legend.position="none", plot.margin=unit(c(1,1,1,1),"mm"))
+})
+
+plot.ADT <- plot_grid(plotlist=p.methodCorrAdd, align="hv", axis="tblr", ncol=1) 
+
+```
+
+## 10X data
+
+```{r}
+plot.10X <- list()
+for(i in seq_along(data.10X.datasets)){
+  dataset <- data.10X.datasets[i]
+  cells <- data.10X.datasets.gex.aboveInf[[dataset]]
+  ADTdata <- list(data.10X.datasets.adt.kallisto[[dataset]], 
+                  data.10X.datasets.adt.cellranger[[dataset]], 
+                  data.10X.datasets.adt.csc[[dataset]], 
+                  data.10X.datasets.adt.csc_nc[[dataset]])
+  
+  commonCells <- Reduce("intersect",lapply(ADTdata,colnames))
+  cells <- intersect(cells,commonCells)
+  ADTdata <- lapply(ADTdata,function(x)x[,cells])
+  ADTdata <- lapply(ADTdata,function(x){rownames(x) <- rownames(data.10X.datasets.adt.kallisto[[dataset]]); x})
+  
+  
+  assays <- c("ADT.kallisto","ADT.cellranger","ADT.csc", "ADT.csc_nc")
+  names(assays) <- assays
+  names(ADTdata) <- assays
+  
+  #ADTdata <- lapply(ADTdata, function(x) as.data.frame(x) %>% mutate(marker=gsub("\\-[TGAC]+","",rownames(x))) %>% mutate(marker=gsub("_[_A-Z0-9a-z]+$","",marker)) %>% pivot_longer(-marker))
+  ADTdata <- lapply(ADTdata, function(x) as.data.frame(x) %>% mutate(marker=rownames(.)) %>% pivot_longer(-marker))
+  
+  ADTdata.DF <- bind_rows(ADTdata, .id="method")
+  ADTdata.DF <- ADTdata.DF %>% pivot_wider(names_from = method, values_from = value)
+  
+  ADTdata.DF <- ADTdata.DF[rowSums(ADTdata.DF[,-c(1,2)]) > 0,]
+  ADTdata.DF <- ADTdata.DF[sample(nrow(ADTdata.DF),nrow(ADTdata.DF)),]
+  #ADTdata.DF <- ADTdata.DF[sample(nrow(ADTdata.DF),1000),]
+  
+  #ADTdata.DF.markerSum <- ADTdata.DF %>% group_by(marker)
+  curLimit <- quantile(ADTdata.DF$ADT.csc_nc, probs=c(0.99999))
+  p.methodCorr <- list()
+  
+  p.methodCorr[["KvsR"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.cellranger+1)) + 
+      labs(x="Kallisto-bustools KITE", y="Cellranger featureOnly")
+  
+  p.methodCorr[["KvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.csc_nc+1)) + 
+      labs(x="Kallisto-bustools KITE", y="CITE-seq Count\n(no UMI correction)")
+  
+  p.methodCorr[["RvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.cellranger+1, y=ADT.csc_nc+1)) + 
+      labs(x="Cellranger featureOnly", y="CITE-seq Count\n(no UMI correction)") 
+  
+  p.methodCorr[["KvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.kallisto+1, y=ADT.csc+1)) + 
+      labs(x="Kallisto-bustools KITE", y="CITE-seq Count")
+  
+  p.methodCorr[["RvsC"]] <- ggplot(ADTdata.DF, aes(x=ADT.cellranger+1, y=ADT.csc+1)) + 
+      labs(x="Cellranger featureOnly", y="CITE-seq Count")
+
+  p.methodCorr[["CvsC_NC"]] <- ggplot(ADTdata.DF, aes(x=ADT.csc_nc+1, y=ADT.csc+1)) + 
+      labs(x="CITE-seq Count\n(no UMI correction)", y="CITE-seq Count")
+  
+  p.methodCorrAdd <- lapply(p.methodCorr, function(x){
+      x + 
+      geom_point(aes(color=marker), stroke=0, alpha=0.25, size=0.5) + 
+      geom_abline(slope=1, linetype="dashed", col="black", size=0.25, alpha=0.25) +
+      annotate(geom="rect", xmin=500, ymin=500, xmax=Inf, ymax=Inf, fill=NA, color=alpha("red",0.5), linetype="dashed") + 
+      scale_x_log10(limits=c(1,curLimit)) + scale_y_log10(limits=c(1,curLimit)) + 
+      annotation_logticks(size=0.25) + 
+      theme(aspect.ratio = 1, legend.position="none", plot.margin=unit(c(1,1,1,1),"mm"))
+  })
+  
+  plot.10X[[dataset]] <- plot_grid(plotlist=p.methodCorrAdd, align="hv", axis="tblr", ncol=1) 
+}
+```
+
+## Supp fig.
+
+```{r}
+plot.10X[["ADT"]] <- plot.ADT
+plot.10X <- plot.10X[c(4,1,2,3)]
+
+png(file=file.path(outdir,"Supplementary Figure S6.png"), width=figure.width.full, height=10.5, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
+cowplot::plot_grid(plotlist=plot.10X, align="v", axis="lr", ncol=4, labels=c("A","B","C","D"), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust)
 dev.off()
 
 ```

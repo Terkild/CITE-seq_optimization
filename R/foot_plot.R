@@ -181,7 +181,7 @@ foot_plot_flip <- function(data,
                       fractile.lower=0.2, 
                       barcode.stepSize=0.3, 
                       barcode.downsample=500,
-                      barcode.alpha=0.4,
+                      barcode.alpha=0.3,
                       barcode.refGroups=NULL
 ){
   require("ggrepel")
@@ -248,7 +248,7 @@ foot_plot_flip <- function(data,
     subset <- do.call("c",subset)
     plotData.barcode <- plotData[subset,]
     
-    p <- p + geom_point(data=plotData.barcode, aes(y=steps[barcodeGroup], col=barcodeGroup, alpha=barcode.alpha),shape="-")
+    p <- p + geom_point(data=plotData.barcode, aes(y=steps[barcodeGroup], col=barcodeGroup, alpha=barcode.alpha),shape="-", size=2)
   }
   
   

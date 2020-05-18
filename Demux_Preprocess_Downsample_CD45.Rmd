@@ -20,7 +20,7 @@ library("Matrix", quietly=T)
 library("DropletUtils", quietly=T)
 
 driveLetter <-"F:/"
-t2g.file <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger.txt")
+t2g.file <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger_CD45.txt")
 kallistobusDir <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/counts_unfiltered")
 kallistobusDirADT <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered")
 kallistobusDirHTO <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered")
@@ -30,11 +30,6 @@ source("R/Utilities.R")
 
 ## Load predefined color schemes
 source("R/color.R")
-
-## Load ggplot theme and defaults
-source("R/ggplot_settings.R")
-
-outdir <- "C:/Users/Terkild2/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
 ```
 
 ## Load GEX data
@@ -48,6 +43,7 @@ colnames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.barcodes.t
 
 t2g <- unique(read.csv(t2g.file, sep = '\t', header=F)[,2:3]) # load t2g file
 t2g <- data.frame(t2g[,2], row.names = t2g[,1])
+t2g[2533,] <- "PTPRC03"
 gene_sym <- t2g[as.character(rownames(raw_mtx)),1] # get symbols for gene ids
 
 # Which rows have same gene symbol (but different Ensembl gene id)
@@ -258,6 +254,11 @@ DimPlot(object, group.by="tissue", reduction="tsne")
 DimPlot(object, group.by="group", reduction="tsne")
 DimPlot(object, label=TRUE, reduction="tsne")
 
+CD45 <- grep("^PTPRC[0-9]+$",rownames(object),value=TRUE)
+CD45.unexpressed <- paste0("PTPRC",c("05","06","08","11","13","14"))
+CD45.expressed <- setdiff(CD45,CD45.unexpressed)
+FeaturePlot(object, features=c("PTPRC"))
+DoHeatmap(object, features=CD45.expressed, slot="data")
 ```
 
 
@@ -275,9 +276,9 @@ FeaturePlot(object, features=c("CD3D","TRAC"), label=TRUE, reduction="tsne", min
 
 
 library("dplyr")
-#cluster.markers <- FindAllMarkers(object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-#top5 <- cluster.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_logFC)
-#DoHeatmap(object, features = top5$gene, slot = "data") + NoLegend() + ggplot2::scale_fill_gradientn(colors = c("blue", "white", "red"))
+cluster.markers <- FindAllMarkers(object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+top5 <- cluster.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_logFC)
+DoHeatmap(object, features = top5$gene, slot = "data") + NoLegend() + ggplot2::scale_fill_gradientn(colors = c("blue", "white", "red"))
 
 ## COMBINE CLUSTERS TO SUPERCLUSTERS
 superclusters <- c("0"="MO/MØ/DC",
@@ -366,66 +367,12 @@ table(object.downsampled$sampleID, object.downsampled$orig.ident)
 DimPlot(object.downsampled, split.by="sampleID", reduction="tsne", label=TRUE , ncol=4) + NoLegend()
 ```
 
-## Determine gating values for each marker
-
-```{r}
-abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
-rownames(abpanel) <- abpanel$Marker
-abpanel$marker <- abpanel$Marker
-abpanel$DSB.cutoff <- 7
-
-## Setting gating thresholds based on DSB normalized values by visual inspection
-abpanel[c("EpCAM"),"DSB.cutoff"] <- 15
-abpanel[c("CD2","CD31"),"DSB.cutoff"] <- 12
-abpanel[c("CD26","CD3","CD39","CD11b"),"DSB.cutoff"] <- 8
-abpanel[c("CD127","CD1a","CD223","CD25","CD62L"),"DSB.cutoff"] <- 6
-abpanel[c("CD24","CD30","TCRab","CD70"),"DSB.cutoff"] <- 5.5
-abpanel[c("CD134","CD138","CD152","CD194","IgG1","IgG2A","CD28","CD80"),"DSB.cutoff"] <- 5
-abpanel[c("CD366"),"DSB.cutoff"] <- 4.5
-abpanel[c("TCRgd","CD183","CD197"),"DSB.cutoff"] <- 4
-abpanel[c("CD86","CD279"),"DSB.cutoff"] <- 3.5
-abpanel[c("TCRgd"),"DSB.cutoff"] <- 3
-
-data.ADT.DSB <- GetAssayData(object.downsampled, assay="ADT.kallisto", slot="data")
-data.meta <- FetchData(object.downsampled, vars=c("fineCluster","supercluster","dilution","tissue"))
-
-data.ADT.DSB.pivot <- as.data.frame(data.ADT.DSB) %>% 
-                          mutate(marker=rownames(.)) %>% 
-                          pivot_longer(-marker) %>% 
-                          filter(data.meta[name,"dilution"]=="DF1")
-
-data.ADT.DSB.pivot.positive.bySupercluster <- data.ADT.DSB.pivot %>% group_by(tissue=data.meta[name,"tissue"], supercluster=data.meta[name,"supercluster"], marker) %>% summarize(positive=sum(value >= abpanel[marker,"DSB.cutoff"]), count=length(name)) %>% mutate(pct=round(positive/count*100,2))
-
-data.ADT.DSB.pivot.positive.byTissue <- data.ADT.DSB.pivot %>% group_by(tissue=data.meta[name,"tissue"], marker) %>% summarize(positive=sum(value >= abpanel[marker,"DSB.cutoff"]), count=length(name)) %>% mutate(pct=round(positive/count*100,2))
-
-
-data.ADT.DSB.pivot.filtered <- data.ADT.DSB.pivot %>% filter(value >= -5)
-```
-
-## Figure
-
-```{r}
-png(file=file.path(outdir,"Supplementary Figure S1.png"), width=figure.width.full, height=10, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
-ggplot(data.ADT.DSB.pivot.filtered, aes(y=data.meta[name,"supercluster"], fill=data.meta[name,"supercluster"], x=value, linetype=data.meta[name,"tissue"], color=data.meta[name,"tissue"])) + 
-  ggridges::geom_density_ridges(alpha=0.5) + 
-  geom_vline(data=abpanel,aes(xintercept=DSB.cutoff)) + 
-  geom_text(data=data.ADT.DSB.pivot.positive.bySupercluster, aes(x=Inf, y=as.integer(supercluster)+(3.3-as.integer(tissue))*0.40, color=tissue, fill=NA, linetype=NA, label=paste0(round(pct,1),"%")), hjust=1, vjust=1, size=2) + 
-  facet_wrap(~marker, scales="free_x", ncol=6) + 
-  scale_fill_manual(values=color.supercluster) + 
-  scale_color_manual(values=sapply(color.tissue,function(x)alpha(x,0.5))) + 
-  scale_y_discrete(expand = c(0,0,0.65,0)) + 
-  #scale_x_continuous(limits=c(-4,NA)) + 
-  theme(legend.position=c(1,0), 
-        strip.text=element_text(vjust=-1),
-        panel.spacing.y=unit(0,"lines"),
-        axis.title=element_blank())
-dev.off()
-
-```
-
 ## Find "ADT expressing cluster" for each tissue
 
 ```{r ADTExpressingCluster}
+abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
+rownames(abpanel) <- abpanel$Marker
+
 ADT.matrix <- data.frame(GetAssayData(object.downsampled[,object.downsampled$volume == "50µl"], assay="ADT.kallisto", slot="counts"))
 ADT.matrix <- ADT.matrix %>% mutate(marker=rownames(ADT.matrix)) %>% pivot_longer(c(-marker))
 cell.annotation <- FetchData(object.downsampled, vars=c("tissue", "fineCluster", "dilution"))
@@ -437,24 +384,7 @@ marker.sum <- marker.sum[,-2]
 
 Cluster.max <- ADT.matrix.agg %>% group_by(marker, tissue) %>% summarize(fineCluster=fineCluster[which.max(nth)])
 
-
-## DIFFERENT APPROACH FOR GETTING EXPRESSING POPULATION BASED ON DSB GATING
-## SIMPLY TAKE THE fineCluster WITH THE HIGHST "PERCENT POSITIVE".
-data.ADT.DSB.pivot.positive.byfineCluster <- data.ADT.DSB.pivot %>% 
-  group_by(tissue=data.meta[name,"tissue"], fineCluster=data.meta[name,"fineCluster"], marker) %>% 
-  summarize(positive=sum(value >= abpanel[marker,"DSB.cutoff"]), count=length(name)) %>% 
-  mutate(pct=round(positive/count*100,2))
-
-data.ADT.DSB.pivot.positive.byfineCluster.filter <- data.ADT.DSB.pivot.positive.byfineCluster %>% group_by(tissue, marker) %>% filter(positive >= min(25,max(positive)))
-
-#Cluster.max <- data.ADT.DSB.pivot.positive.byfineCluster.filter %>% group_by(marker, tissue) %>% summarize(fineCluster=fineCluster[which.max(pct)])
-
-## Due to the limited number of epithelial cells and the above filtering, EpCAM expressing cluster was not chosen to be the epithelial cluster. Change manually or come up with a better filtering approach.
-#Cluster.max[Cluster.max$marker == "EpCAM" & Cluster.max$tissue == "Lung","fineCluster"] <- "21"
-#Cluster.max[Cluster.max$marker == "CD123" & Cluster.max$tissue == "PBMC","fineCluster"] <- "17"
-
-ADT.matrix.aggByClusterMax <- Cluster.max %>% left_join(ADT.matrix.agg) %>% left_join(marker.sum) %>% left_join(abpanel, by=c("marker"="Marker")) %>% left_join(data.ADT.DSB.pivot.positive.byTissue)
-
+ADT.matrix.aggByClusterMax <- Cluster.max %>% left_join(ADT.matrix.agg) %>% left_join(marker.sum) %>% left_join(abpanel, by=c("marker"="Marker"))
 
 write.table(ADT.matrix.aggByClusterMax,"data/markerByClusterStats.tsv")
 ```

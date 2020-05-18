@@ -1,0 +1,90 @@
+---
+title: "CITE-seq optimization - Make Seurat Object"
+author: "Terkild Brink Buus"
+date: "30/3/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set()
+options(stringsAsFactors=FALSE)
+```
+
+## Load libraries etc.
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(114)
+require("Seurat", quietly=T)
+require("tidyverse", quietly=T)
+require("Matrix", quietly=T)
+require("DropletUtils", quietly=T)
+
+## Load ggplot theme and defaults
+source("R/ggplot_settings.R")
+
+## Load helper functions (ggplot themes, biexp transformation etc.)
+source("R/Utilities.R")
+
+## Load predefined color schemes
+source("R/color.R")
+
+outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
+```
+
+## Load data
+
+```{r}
+load(file="data/data.10X.datasets.Rdata")
+```
+
+## Draw UMI per marker for 10X datasets with comparable antibody panels
+
+```{r}
+for(i in seq_along(data.10X.datasets)){
+  dataset <- data.10X.datasets[i]
+  
+  kallisto <- data.10X.datasets.adt.kallisto[[dataset]]
+  cells <- intersect(data.10X.datasets.gex.aboveInf[[dataset]],colnames(kallisto))
+  
+  
+  total <- Matrix::rowSums(kallisto)
+  Cell <- Matrix::rowSums(kallisto[,cells])
+  EmptyDrop <- total-Cell
+
+  add <- data.frame(Dataset=dataset,Marker=names(Cell),Cell,EmptyDrop)
+  
+  if(i == 1){
+    plotData <- add
+  } else {
+    plotData <- rbind(plotData,add)
+  }
+}
+
+plotData <- plotData %>% pivot_longer(c(-Marker, -Dataset))
+plotData$Marker <- gsub("isotype_control_","",plotData$Marker)
+plotData$subset <- factor(as.character(plotData$name), levels=c("EmptyDrop","Cell"))
+plotData$Dataset <- factor(as.character(plotData$Dataset), levels=data.10X.datasets)
+    
+data.10X.markerBarplot <- ggplot(plotData, aes(x=Marker, y=value/10^6, fill=subset)) + 
+  geom_bar(stat="identity", position="dodge", color="black", width=0.65) + 
+  scale_y_continuous(expand=c(0,0,0.05,0)) + 
+  scale_fill_manual(values=c("lightgrey","black")) + 
+  labs(y=bquote("ADT UMI counts ("~10^6~")")) + 
+  coord_flip() + 
+  facet_wrap(~Dataset, nrow=1, scales="free_x") + 
+  theme(axis.title.y=element_blank(), 
+        legend.position=c(1,0.98), 
+        legend.justification=c(1,1), 
+        legend.title=element_blank(),
+        legend.background=element_blank())
+
+
+data.10X.GEXrank <- cowplot::plot_grid(plotlist=knee_plots, labels=data.10X.datasets, hjust=-0.65, vjust=1.6, label_size=7, nrow=1)
+
+
+
+png(file=file.path(outdir,"Supplementary Figure S5.png"), width=figure.width.full, height=5, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
+cowplot::plot_grid(data.10X.GEXrank, data.10X.markerBarplot, labels=c("A", "B"), ncol=1, rel_heights=c(2,3), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust)
+dev.off()
+
+```

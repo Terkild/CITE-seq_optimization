@@ -26,7 +26,7 @@ source("R/Utilities.R")
 ## Load predefined color schemes
 source("R/color.R")
 
-outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
+outdir <- "C:/Users/Terkild2/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
 ```
 
 ## Load Seurat object
@@ -84,6 +84,8 @@ p.ADTrank.Abtitration
 ```{r loadABPanel}
 abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
 rownames(abpanel) <- abpanel$Marker
+# a bit of a hack...
+abpanel$conc_µg_per_mL <- abpanel$conc_µg_per_mL/4
 
 markerStats <- read.table("data/markerByClusterStats.tsv")
 markerStats.PBMC <- markerStats[markerStats$tissue == "PBMC",]
@@ -123,7 +125,8 @@ p2 <- ggplot(ADT.matrix.agg, aes(x=marker.byConc,y=log2(sum))) +
   scale_fill_manual(values=color.volume) +
   scale_y_continuous(breaks=c(9:17)) + 
   ylab("log2(UMI sum)") + 
-  theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position="right", legend.justification="left", legend.title.align=0, legend.key.width=unit(0.2,"cm")) + 
+  guides(fill=guide_legend(override.aes=list(size=1.5), reverse=TRUE)) + 
+  theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position="bottom", legend.justification="left", legend.title.align=0, legend.key.width=unit(0.2,"cm"), legend.title=element_blank()) + 
   coord_flip()
 
 library(patchwork)
@@ -143,7 +146,7 @@ p.ADTcount.AbtitrationByConc <- ggplot(ADT.matrix.agg[order(-ADT.matrix.agg$conc
   geom_bar(stat="identity", col=alpha(col="black",alpha=0.05)) + 
   scale_fill_viridis_c(trans="log2", labels=scaleFUN, breaks=c(0.0375,0.15,0.625,2.5,10)) + 
   scale_y_continuous(expand=c(0,0,0,0.05)) + 
-  labs(fill="µg/mL", y=bquote("ADT UMI counts ("~10^6~")")) + 
+  labs(fill="DF4\nµg/mL", y=bquote("ADT UMI counts ("~10^6~")")) + 
   guides(fill=guide_colourbar(reverse=T)) + 
   theme(panel.grid.major=element_blank(), axis.title.x=element_blank(), panel.border=element_blank(), axis.line = element_line(), legend.position="right")
 
@@ -212,12 +215,14 @@ B2 <- p2
 B2 <- B2 + theme(legend.position="none")
 C1 <- p3 + theme(legend.position="none")
 
+p2.legend <- cowplot::get_legend(p2 + theme(legend.position="bottom", legend.direction="horizontal", legend.background=element_blank(), legend.box.background=element_blank(), legend.key=element_blank()))
+cowplot::plot_grid(p2.legend)
 
 ADE <- cowplot::plot_grid(A,D,NULL, labels=c("A","D",""), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust, ncol=1, rel_heights = c(13,17,1.5))
 BC <- cowplot::plot_grid(B1, B2, C1, nrow=1, align="h", axis="tb", labels=c("B", "", "C"), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust, rel_widths=c(2,10,10))
 
 png(file=file.path(outdir,"Figure 3.png"), width=figure.width.full, height=4.5, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
-plot_grid(ADE, BC, nrow=1, rel_widths=c(1,4), align="v", axis="l")
+cowplot::ggdraw(plot_grid(ADE, BC, nrow=1, rel_widths=c(1,4), align="v", axis="l")) + cowplot::draw_plot(p2.legend,0.27,0.020,0.2,0.00001)
 dev.off()
 ```
 
