@@ -6,45 +6,60 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set()
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 options(stringsAsFactors=FALSE)
 ```
 
-## Load libraries etc.
+## Load utilities
 
-```{r}
+Including libraries, plotting and color settings and custom utility functions
+
+```{r loadLibraries, results='hide', message=FALSE, warning=FALSE}
 set.seed(114)
 require("Seurat", quietly=T)
 require("tidyverse", quietly=T)
 library("Matrix", quietly=T)
 library("DropletUtils", quietly=T)
 
-driveLetter <-"F:/"
-t2g.file <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger.txt")
-kallistobusDir <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/counts_unfiltered")
-kallistobusDirADT <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered")
-kallistobusDirHTO <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered")
+## Load ggplot theme and defaults
+source("R/ggplot_settings.R")
 
-## Load helper functions (ggplot themes, biexp transformation etc.)
+## Load helper functions
 source("R/Utilities.R")
 
 ## Load predefined color schemes
 source("R/color.R")
 
-## Load ggplot theme and defaults
-source("R/ggplot_settings.R")
+read_kallisto_data <- function(file.path){
+  ## Load mtx and transpose it
+  res_mat <- as(t(readMM(file.path(file.path,"cells_x_genes.mtx"))), 'CsparseMatrix') 
+  ## Attach genes
+  rownames(res_mat) <- read.csv(file.path(file.path,"cells_x_genes.genes.txt"), sep = '\t', header = F)[,1]
+  ## Attach barcodes
+  colnames(res_mat) <- read.csv(file.path(file.path,"cells_x_genes.barcodes.txt"), header = F, sep = '\t')[,1]
+  
+  return(res_mat)
+}
 
-outdir <- "C:/Users/Terkild2/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
+data.drive <- "F:/"
+data.project.dir <- "Projects/ECCITE-seq/TotalSeqC_TitrationA"
+outdir <- "figures"
+t2g.file <- file.path(data.drive,data.project.dir,"/kallisto/t2g_cellranger.txt")
+
+kallistobusDir <- file.path(data.drive,data.project.dir,"kallisto/gex/c1/counts_unfiltered")
+kallistobusDirADT <- file.path(data.drive,data.project.dir,"kallisto/features/A1_S5.ADT_15/counts_unfiltered")
+kallistobusDirHTO <- file.path(data.drive,data.project.dir,"kallisto/features/H1_S6.HTO_A_13/counts_unfiltered")
+
+data.abpanel <- "data/Supplementary_Table_1.xlsx"
+
 ```
 
-## Load GEX data
+## Load data
 
 From kallisto-bustools output. Modified from https://github.com/Sarah145/scRNA_pre_process 
 
 ```{r loadGEX}
-raw_mtx <- as(t(readMM(file.path(kallistobusDir,"cells_x_genes.mtx"))), 'CsparseMatrix') # load mtx and transpose it
-rownames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.genes.txt"), sep = '\t', header = F)[,1] # attach genes
-colnames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.barcodes.txt"), header = F, sep = '\t')[,1] # attach barcodes
+raw_mtx <- read_kallisto_data(kallistobusDir)
 
 t2g <- unique(read.csv(t2g.file, sep = '\t', header=F)[,2:3]) # load t2g file
 t2g <- data.frame(t2g[,2], row.names = t2g[,1])
@@ -74,38 +89,41 @@ rownames(raw_mtx) <- gene_sym[-gene_sym.duplicated]
 raw_mtx <- rbind(raw_mtx,raw_mtx_dedup)
 
 tot_counts <- Matrix::colSums(raw_mtx)
-summary(tot_counts)
 bc_rank <- DropletUtils::barcodeRanks(raw_mtx, lower = 10)
 
-knee_plot(bc_rank)
+GEX.knee_plot <- knee_plot(bc_rank)
 
 kallisto.GEX <- raw_mtx
 ```
 
-## Load Kallisto HTO data
+# Load Kallisto HTO data
 
 ```{r loadHTO}
-res_mat <- read_count_output(kallistobusDirHTO, name = "cells_x_genes")
-dim(res_mat)
-tot_counts <- Matrix::colSums(res_mat)
-summary(tot_counts)
-bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
+HTO.res_mat <- read_kallisto_data(kallistobusDirHTO)
 
-knee_plot(bc_rank)
-kallisto.HTO <- res_mat
+HTO.tot_counts <- Matrix::colSums(HTO.res_mat)
+HTO.bc_rank <- DropletUtils::barcodeRanks(HTO.res_mat, lower = 10)
+
+HTO.knee_plot <- knee_plot(HTO.bc_rank)
+kallisto.HTO <- HTO.res_mat
 ```
 
-## Load Kallisto ADT data
+# Load Kallisto ADT data
 
 ```{r loadADT}
-res_mat <- read_count_output(kallistobusDirADT, name = "cells_x_genes")
-dim(res_mat)
-tot_counts <- Matrix::colSums(res_mat)
-summary(tot_counts)
-bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
+ADT.res_mat <- read_kallisto_data(kallistobusDirADT)
 
-knee_plot(bc_rank)
-kallisto.ADT <- res_mat
+ADT.tot_counts <- Matrix::colSums(ADT.res_mat)
+ADT.bc_rank <- DropletUtils::barcodeRanks(ADT.res_mat, lower = 10)
+
+ADT.knee_plot <- knee_plot(ADT.bc_rank)
+kallisto.ADT <- ADT.res_mat
+```
+
+Plot Barcode-rank plots
+
+```{r, fig.height=2.5, fig.width=7}
+cowplot::plot_grid(GEX.knee_plot, HTO.knee_plot, ADT.knee_plot, nrow=1, labels=c("GEX","HTO","ADT"))
 ```
 
 ## Demultiplex by HTO
@@ -162,12 +180,11 @@ object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k",
 
 ## Filter dead/dying cells
 
-Based on mitochondrial reads and number of detected genes. Cutoff set to 15% MT and at least 60 expressed genes by visual inspection.
+Based on mitochondrial reads and number of detected genes. Cutoff set to 15% MT and at least 60 expressed genes by visual inspection. The number of expressed genes is low due to the low depth of the GEX sequencing (5000 reads/cell)
 
 ```{r filter}
 DefaultAssay(object) <- "RNA.kallisto"
 object[["percent.mt"]] <- PercentageFeatureSet(object, pattern = "^MT-")
-#object[["percent.mt"]][is.nan(object[["percent.mt"]][,1]),1] <- 100
 
 cutoff.percent.mt <- 15
 cutoff.nFeature <- 60
@@ -209,9 +226,9 @@ object <- subset(object, subset=scDblFinder.class=="singlet")
 
 ## Make DSB normalization
 
-https://mattpm.github.io/dsb/ 
+Normalize ADT counts using the "Denoised and Scaled by Background" method (https://mattpm.github.io/dsb/). This method utilizes the ADT signal in non-cell-containing droplets and signal form isotype controls to make normalized values. The normalized values correspond to number of standard deviations from the background median.
 
-```{r dsbnorm}
+```{r dsbnorm, fig.height=8, fig.width=10}
 #devtools::install_github(repo = 'MattPM/dsb')
 library(dsb)
 
@@ -263,22 +280,23 @@ DimPlot(object, label=TRUE, reduction="tsne")
 
 ## Label and merge clusters into "superclusters"
 
-To make the poulations less complex and for easier visualization, we merged the clusters into major cell types
+To make the poulations less complex and for easier visualization, we merged the clusters into major cell types.
 
-```{r superclustering}
+```{r superclustering, fig.width=8, fig.height=7}
 ## LINEAGE MARKERS FOR CLUSTERLABELLING
 ADTplots <- FeaturePlot(object, features=c("adt_CD1a","adt_CD3","adt_CD4","adt_CD8","adt_CD11b","adt_CD14","adt_CD19","adt_CD56","adt_HLA-DR","adt_EpCAM"), label=TRUE, reduction="tsne", min.cutoff=4, col=c("lightgrey","red"), combine=FALSE)
 ADTplots <- lapply(ADTplots,FUN=function(x)x+NoLegend())
 CombinePlots(ADTplots,ncol=5)
-FeaturePlot(object, features=c("CD3D","TRAC"), label=TRUE, reduction="tsne", min.cutoff=1.3, col=c("lightgrey","red"), combine=FALSE)
-
-
 
 library("dplyr")
-#cluster.markers <- FindAllMarkers(object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-#top5 <- cluster.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_logFC)
-#DoHeatmap(object, features = top5$gene, slot = "data") + NoLegend() + ggplot2::scale_fill_gradientn(colors = c("blue", "white", "red"))
+cluster.markers <- FindAllMarkers(object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+top5 <- cluster.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_logFC)
+DoHeatmap(object, features = top5$gene, slot = "data") + NoLegend() + ggplot2::scale_fill_gradientn(colors = c("blue", "white", "red"))
+```
 
+Combine clusters into superclusters (corresponding roughly to cell types)
+
+```{r}
 ## COMBINE CLUSTERS TO SUPERCLUSTERS
 superclusters <- c("0"="MO/MØ/DC",
                    "1"="T/NK cells",
@@ -307,22 +325,14 @@ round(table/rowSums(table)*100,2)
 ```
 
 ## Make fine-grained clustering
+
 ```{r fineClusters}
-## SEE HOW DIFFERENT GROUPS ARE LOCATED IN PRINCIPAL COMPONENTS
-#temp <- cbind(object@reductions$pca@cell.embeddings[,1:50],FetchData(object, vars=c("group","volume","dilution","tissue")))
-#temp <- temp[temp$tissue=="PBMC",]
-
-#temp2 <- temp %>% pivot_longer(c(-group,-volume,-dilution,-tissue))
-#temp3 <- temp2 %>% group_by(name, group) %>% summarise(mean=median(value))
-#ggplot(temp3,aes(x=name,y=mean,col=group)) + geom_point()
-
 object <- FindClusters(object, resolution = 1.2)
 
 object$fineCluster <- Idents(object)
 
 DimPlot(object, reduction = "tsne", label = TRUE) + NoLegend()
 DimPlot(object, reduction = "umap", label = TRUE) + NoLegend()
-table(Idents(object),object$sampleID)
 ```
 
 ## Downsampling
@@ -357,8 +367,8 @@ for(i in 1:nrow(data.fineClusters.min)){
   }
 }
 
-table(object$sampleID,object$fineCluster)
-table(object$sampleID[downsampled.index],object$fineCluster[downsampled.index])
+table(object$fineCluster,object$sampleID)
+table(object$fineCluster[downsampled.index],object$sampleID[downsampled.index])
 
 object.downsampled <- subset(object, cells=downsampled.index[sample(length(downsampled.index),length(downsampled.index))])
 table(object.downsampled$sampleID, object.downsampled$orig.ident)
@@ -368,8 +378,10 @@ DimPlot(object.downsampled, split.by="sampleID", reduction="tsne", label=TRUE , 
 
 ## Determine gating values for each marker
 
+While DSB normalization should center negative populations around 0, their variance makes it necessary to make small adjustments per marker to split between negative and positive cells. This done by visual inspection.
+
 ```{r}
-abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
+abpanel <- data.frame(readxl::read_excel(data.abpanel))
 rownames(abpanel) <- abpanel$Marker
 abpanel$marker <- abpanel$Marker
 abpanel$DSB.cutoff <- 7
@@ -394,67 +406,81 @@ data.ADT.DSB.pivot <- as.data.frame(data.ADT.DSB) %>%
                           pivot_longer(-marker) %>% 
                           filter(data.meta[name,"dilution"]=="DF1")
 
+## Calculate percent positive (within each supercluster)
 data.ADT.DSB.pivot.positive.bySupercluster <- data.ADT.DSB.pivot %>% group_by(tissue=data.meta[name,"tissue"], supercluster=data.meta[name,"supercluster"], marker) %>% summarize(positive=sum(value >= abpanel[marker,"DSB.cutoff"]), count=length(name)) %>% mutate(pct=round(positive/count*100,2))
 
+## Calculate percent positive (within each tissue and supercluster)
 data.ADT.DSB.pivot.positive.byTissue <- data.ADT.DSB.pivot %>% group_by(tissue=data.meta[name,"tissue"], marker) %>% summarize(positive=sum(value >= abpanel[marker,"DSB.cutoff"]), count=length(name)) %>% mutate(pct=round(positive/count*100,2))
 
-
+## Remove negative "outliers" from the visualization as it drastically skews the axes making it hard to interpret the plots.
 data.ADT.DSB.pivot.filtered <- data.ADT.DSB.pivot %>% filter(value >= -5)
 ```
 
-## Figure
+Plot the gating values and ADT distribution within major cell types
 
-```{r}
-png(file=file.path(outdir,"Supplementary Figure S1.png"), width=figure.width.full, height=10, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
-ggplot(data.ADT.DSB.pivot.filtered, aes(y=data.meta[name,"supercluster"], fill=data.meta[name,"supercluster"], x=value, linetype=data.meta[name,"tissue"], color=data.meta[name,"tissue"])) + 
-  ggridges::geom_density_ridges(alpha=0.5) + 
+```{r, fig.height=8, fig.width=7, message=FALSE, warning=FALSE}
+p.ADT.histograms <- ggplot(data.ADT.DSB.pivot.filtered, aes(y=data.meta[name,"supercluster"], fill=data.meta[name,"supercluster"], x=value, linetype=data.meta[name,"tissue"], color=data.meta[name,"tissue"])) + 
+  ggridges::geom_density_ridges(alpha=0.5, show.legend=FALSE) + 
+  ## A bit of a hack to get the "right" legend symbols
+  geom_point(alpha=0, aes(color=NA, linetype=NA)) + 
+  geom_line(alpha=0, aes(fill=NA)) + 
   geom_vline(data=abpanel,aes(xintercept=DSB.cutoff)) + 
-  geom_text(data=data.ADT.DSB.pivot.positive.bySupercluster, aes(x=Inf, y=as.integer(supercluster)+(3.3-as.integer(tissue))*0.40, color=tissue, fill=NA, linetype=NA, label=paste0(round(pct,1),"%")), hjust=1, vjust=1, size=2) + 
+  geom_text(data=data.ADT.DSB.pivot.positive.bySupercluster, 
+            aes(x=Inf, y=as.integer(supercluster)+(3.3-as.integer(tissue))*0.40, color=tissue, fill=NA, linetype=NA, label=paste0(round(pct,1),"%")), hjust=1, vjust=1, size=2, show.legend=FALSE) + 
+  #geom_point(data=data.ADT.DSB.pivot.positive.bySupercluster, 
+            #aes(x=1, y=1, fill=supercluster, color="black", linetype=21, alpha=0)) + 
   facet_wrap(~marker, scales="free_x", ncol=6) + 
   scale_fill_manual(values=color.supercluster) + 
   scale_color_manual(values=sapply(color.tissue,function(x)alpha(x,0.5))) + 
+  scale_linetype_manual(values=c("Lung"="dashed","PBMC"="solid")) + 
   scale_y_discrete(expand = c(0,0,0.65,0)) + 
-  #scale_x_continuous(limits=c(-4,NA)) + 
+  labs(fill="Cell type", linetype="Tissue", color="Tissue") +
+  guides(fill=guide_legend(ncol=2, override.aes=list(alpha=1, pch=21, size=3), reverse=TRUE),
+         color=guide_legend(override.aes=list(linetype=c("solid","dashed"), pch=NA, alpha=1, size=0.75),
+                            keywidth=unit(8,"mm"), reverse=TRUE), 
+         linetype=FALSE) + 
   theme(legend.position=c(1,0), 
+        legend.justification=c(1,0),
+        legend.direction="horizontal",
+        legend.key.size=unit(3,"mm"),
         strip.text=element_text(vjust=-1),
         panel.spacing.y=unit(0,"lines"),
         axis.title=element_blank())
+
+
+png(file=file.path(outdir,"Supplementary Figure S1.png"), width=figure.width.full, height=10, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
+
+  p.ADT.histograms
+
 dev.off()
 
+p.ADT.histograms
 ```
 
 ## Find "ADT expressing cluster" for each tissue
 
+We have tried different approaches. But the one that came closest to manual inspecition was using the cluster that had the highest value at the 90th percentile. To make it less sensitive to outliers within very small clusters, we use the median value if the 90th percentile "rank" is less than 10 threshhold. This effectively makes sure that the value used for expression cannot be from within the top 1-3 cells within a cluster.
+
 ```{r ADTExpressingCluster}
+## Get data from DF1 samples stained in 50µl (as this is likely to have highest signal)
 ADT.matrix <- data.frame(GetAssayData(object.downsampled[,object.downsampled$volume == "50µl"], assay="ADT.kallisto", slot="counts"))
 ADT.matrix <- ADT.matrix %>% mutate(marker=rownames(ADT.matrix)) %>% pivot_longer(c(-marker))
+
+## Get annotation
 cell.annotation <- FetchData(object.downsampled, vars=c("tissue", "fineCluster", "dilution"))
 
+## Calculate summary statistics for each fineCluster
 ADT.matrix.agg <- ADT.matrix %>% group_by(tissue=cell.annotation[name,"tissue"], fineCluster=cell.annotation[name,"fineCluster"], marker) %>% summarise(nCells=length(value), UMIsum=sum(value), nth=nth(value), median=median(value), f90=quantile(value,probs=0.9))
 
 marker.sum <- ADT.matrix %>% group_by(tissue=cell.annotation[name,"tissue"], dilution=cell.annotation[name,"dilution"], marker) %>% summarise(UMItotal=sum(value)) %>% filter(dilution=="DF1")
+
+## Remove dilution factor column (necessary for joining)
 marker.sum <- marker.sum[,-2]
 
+## Determine which cluster has "highest expression" based on the highest nth value
 Cluster.max <- ADT.matrix.agg %>% group_by(marker, tissue) %>% summarize(fineCluster=fineCluster[which.max(nth)])
 
-
-## DIFFERENT APPROACH FOR GETTING EXPRESSING POPULATION BASED ON DSB GATING
-## SIMPLY TAKE THE fineCluster WITH THE HIGHST "PERCENT POSITIVE".
-data.ADT.DSB.pivot.positive.byfineCluster <- data.ADT.DSB.pivot %>% 
-  group_by(tissue=data.meta[name,"tissue"], fineCluster=data.meta[name,"fineCluster"], marker) %>% 
-  summarize(positive=sum(value >= abpanel[marker,"DSB.cutoff"]), count=length(name)) %>% 
-  mutate(pct=round(positive/count*100,2))
-
-data.ADT.DSB.pivot.positive.byfineCluster.filter <- data.ADT.DSB.pivot.positive.byfineCluster %>% group_by(tissue, marker) %>% filter(positive >= min(25,max(positive)))
-
-#Cluster.max <- data.ADT.DSB.pivot.positive.byfineCluster.filter %>% group_by(marker, tissue) %>% summarize(fineCluster=fineCluster[which.max(pct)])
-
-## Due to the limited number of epithelial cells and the above filtering, EpCAM expressing cluster was not chosen to be the epithelial cluster. Change manually or come up with a better filtering approach.
-#Cluster.max[Cluster.max$marker == "EpCAM" & Cluster.max$tissue == "Lung","fineCluster"] <- "21"
-#Cluster.max[Cluster.max$marker == "CD123" & Cluster.max$tissue == "PBMC","fineCluster"] <- "17"
-
 ADT.matrix.aggByClusterMax <- Cluster.max %>% left_join(ADT.matrix.agg) %>% left_join(marker.sum) %>% left_join(abpanel, by=c("marker"="Marker")) %>% left_join(data.ADT.DSB.pivot.positive.byTissue)
-
 
 write.table(ADT.matrix.aggByClusterMax,"data/markerByClusterStats.tsv")
 ```

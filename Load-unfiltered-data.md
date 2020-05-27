@@ -1,177 +1,69 @@
-CITE-seq optimization - Make Seurat Object
+CITE-seq optimization - Load unfiltered data
 ================
 Terkild Brink Buus
 30/3/2020
 
-## Load libraries etc.
+## Load utilities
+
+Including libraries, plotting and color settings and custom utility
+functions
 
 ``` r
 set.seed(114)
 require("Seurat", quietly=T)
 require("tidyverse", quietly=T)
-```
+library("Matrix", quietly=T)
+library("DropletUtils", quietly=T)
 
-    ## -- Attaching packages -------------------------------------------------------------------------------- tidyverse 1.3.0 --
-
-    ## v ggplot2 3.3.0     v purrr   0.3.3
-    ## v tibble  3.0.0     v dplyr   0.8.5
-    ## v tidyr   1.0.2     v stringr 1.4.0
-    ## v readr   1.3.1     v forcats 0.5.0
-
-    ## -- Conflicts ----------------------------------------------------------------------------------- tidyverse_conflicts() --
-    ## x dplyr::filter() masks stats::filter()
-    ## x dplyr::lag()    masks stats::lag()
-
-``` r
-require("Matrix", quietly=T)
-```
-
-    ## 
-    ## Attaching package: 'Matrix'
-
-    ## The following objects are masked from 'package:tidyr':
-    ## 
-    ##     expand, pack, unpack
-
-``` r
-require("DropletUtils", quietly=T)
-```
-
-    ## 
-    ## Attaching package: 'BiocGenerics'
-
-    ## The following objects are masked from 'package:parallel':
-    ## 
-    ##     clusterApply, clusterApplyLB, clusterCall, clusterEvalQ,
-    ##     clusterExport, clusterMap, parApply, parCapply, parLapply,
-    ##     parLapplyLB, parRapply, parSapply, parSapplyLB
-
-    ## The following object is masked from 'package:Matrix':
-    ## 
-    ##     which
-
-    ## The following objects are masked from 'package:dplyr':
-    ## 
-    ##     combine, intersect, setdiff, union
-
-    ## The following objects are masked from 'package:stats':
-    ## 
-    ##     IQR, mad, sd, var, xtabs
-
-    ## The following objects are masked from 'package:base':
-    ## 
-    ##     anyDuplicated, append, as.data.frame, basename, cbind, colnames,
-    ##     dirname, do.call, duplicated, eval, evalq, Filter, Find, get, grep,
-    ##     grepl, intersect, is.unsorted, lapply, Map, mapply, match, mget,
-    ##     order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank,
-    ##     rbind, Reduce, rownames, sapply, setdiff, sort, table, tapply,
-    ##     union, unique, unsplit, which, which.max, which.min
-
-    ## 
-    ## Attaching package: 'S4Vectors'
-
-    ## The following object is masked from 'package:Matrix':
-    ## 
-    ##     expand
-
-    ## The following objects are masked from 'package:dplyr':
-    ## 
-    ##     first, rename
-
-    ## The following object is masked from 'package:tidyr':
-    ## 
-    ##     expand
-
-    ## The following object is masked from 'package:base':
-    ## 
-    ##     expand.grid
-
-    ## 
-    ## Attaching package: 'IRanges'
-
-    ## The following objects are masked from 'package:dplyr':
-    ## 
-    ##     collapse, desc, slice
-
-    ## The following object is masked from 'package:purrr':
-    ## 
-    ##     reduce
-
-    ## The following object is masked from 'package:grDevices':
-    ## 
-    ##     windows
-
-    ## Welcome to Bioconductor
-    ## 
-    ##     Vignettes contain introductory material; view with
-    ##     'browseVignettes()'. To cite Bioconductor, see
-    ##     'citation("Biobase")', and for packages 'citation("pkgname")'.
-
-    ## 
-    ## Attaching package: 'matrixStats'
-
-    ## The following objects are masked from 'package:Biobase':
-    ## 
-    ##     anyMissing, rowMedians
-
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     count
-
-    ## 
-    ## Attaching package: 'DelayedArray'
-
-    ## The following objects are masked from 'package:matrixStats':
-    ## 
-    ##     colMaxs, colMins, colRanges, rowMaxs, rowMins, rowRanges
-
-    ## The following object is masked from 'package:purrr':
-    ## 
-    ##     simplify
-
-    ## The following objects are masked from 'package:base':
-    ## 
-    ##     aperm, apply, rowsum
-
-    ## 
-    ## Attaching package: 'SummarizedExperiment'
-
-    ## The following object is masked from 'package:Seurat':
-    ## 
-    ##     Assays
-
-``` r
 ## Load ggplot theme and defaults
 source("R/ggplot_settings.R")
 
-## Load helper functions (ggplot themes, biexp transformation etc.)
+## Load helper functions
 source("R/Utilities.R")
 
-## Load predefined color schemes
-source("R/color.R")
+read_kallisto_data <- function(file.path){
+  ## Load mtx and transpose it
+  res_mat <- as(t(readMM(file.path(file.path,"cells_x_genes.mtx"))), 'CsparseMatrix') 
+  ## Attach genes
+  rownames(res_mat) <- read.csv(file.path(file.path,"cells_x_genes.genes.txt"), sep = '\t', header = F)[,1]
+  ## Attach barcodes
+  colnames(res_mat) <- read.csv(file.path(file.path,"cells_x_genes.barcodes.txt"), header = F, sep = '\t')[,1]
+  
+  return(res_mat)
+}
+```
 
-data.drive <- "F:"
-outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
+## Set file paths
 
-t2g.file <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger.txt"
-kallistobusDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/counts_unfiltered"
+How the different aligned and counted read outputs from various
+algorithms were generated using Snakemake and can be seen in the
+included [Snakefile](Snakefile)
+
+``` r
+data.drive <- "F:/"
+data.project.dir <- "Projects/ECCITE-seq/TotalSeqC_TitrationA"
+outdir <- "figures"
+t2g.file <- file.path(data.drive,data.project.dir,"/kallisto/t2g_cellranger.txt")
+kallistobusDir <- file.path(data.drive,data.project.dir,"kallisto/gex/c1/counts_unfiltered")
 
 ## ADT data
-kallistobusDirADT <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered"
-data10XADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_A1/outs/raw_feature_bc_matrix"
-dataCSCADTDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/umi_count"
-dataCSCADTDir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT/uncorrected_cells/dense_umis.tsv"
-dataCSCADTnocorrectDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT_nocorrect/umi_count"
-dataCSCADTnocorrectDir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/A1_S5_d1_ADT_nocorrect/uncorrected_cells/dense_umis.tsv"
-
+kallistobusDirADT <- file.path(data.drive,data.project.dir,"kallisto/features/A1_S5.ADT_15/counts_unfiltered")
+data10XADTDir <- file.path(data.drive,data.project.dir,"cellranger_A1/outs/raw_feature_bc_matrix")
+dataCSCADTDir <- file.path(data.drive,data.project.dir,"cite-seq-count/A1_S5_d1_ADT/umi_count")
+dataCSCADTDir.dense <- file.path(data.drive,data.project.dir,"cite-seq-count/A1_S5_d1_ADT/uncorrected_cells/dense_umis.tsv")
+dataCSCADTnocorrectDir <- file.path(data.drive,data.project.dir,"cite-seq-count/A1_S5_d1_ADT_nocorrect/umi_count")
+dataCSCADTnocorrectDir.dense <- file.path(data.drive,data.project.dir,"cite-seq-count/A1_S5_d1_ADT_nocorrect/uncorrected_cells/dense_umis.tsv")
 
 ## HTO data
-kallistobusDirHTO <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered"
-data10XHTODir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cellranger_H1/outs/raw_feature_bc_matrix"
-dataCSCHTODir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO/umi_count"
-dataCSCHTODir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO/uncorrected_cells/dense_umis.tsv"
-dataCSCHTOnocorrectDir <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO_nocorrect/umi_count"
-dataCSCHTOnocorrectDir.dense <- "F:/Projects/ECCITE-seq/TotalSeqC_TitrationA/cite-seq-count/H1_S6_d1_HTO_nocorrect/uncorrected_cells/dense_umis.tsv"
+kallistobusDirHTO <- file.path(data.drive,data.project.dir,"kallisto/features/H1_S6.HTO_A_13/counts_unfiltered")
+data10XHTODir <- file.path(data.drive,data.project.dir,"cellranger_H1/outs/raw_feature_bc_matrix")
+dataCSCHTODir <- file.path(data.drive,data.project.dir,"cite-seq-count/H1_S6_d1_HTO/umi_count")
+dataCSCHTODir.dense <- file.path(data.drive,data.project.dir,"cite-seq-count/H1_S6_d1_HTO/uncorrected_cells/dense_umis.tsv")
+dataCSCHTOnocorrectDir <- file.path(data.drive,data.project.dir,"cite-seq-count/H1_S6_d1_HTO_nocorrect/umi_count")
+dataCSCHTOnocorrectDir.dense <- file.path(data.drive,data.project.dir,"cite-seq-count/H1_S6_d1_HTO_nocorrect/uncorrected_cells/dense_umis.tsv")
+
+## 10X datasets
+data.10X.dir <- file.path(data.drive,"data","10XDatasets")
 ```
 
 # TITRATION DATASET
@@ -182,61 +74,43 @@ From kallisto-bustools output. Modified from
 <https://github.com/Sarah145/scRNA_pre_process>
 
 ``` r
-raw_mtx <- as(t(readMM(file.path(kallistobusDir,"cells_x_genes.mtx"))), 'CsparseMatrix') # load mtx and transpose it
-rownames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.genes.txt"), sep = '\t', header = F)[,1] # attach genes
-colnames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.barcodes.txt"), header = F, sep = '\t')[,1] # attach barcodes
+raw_mtx <- read_kallisto_data(kallistobusDir)
 
 t2g <- unique(read.csv(t2g.file, sep = '\t', header=F)[,2:3]) # load t2g file
 t2g <- data.frame(t2g[,2], row.names = t2g[,1])
 gene_sym <- t2g[as.character(rownames(raw_mtx)),1] # get symbols for gene ids
 
-# Which rows have same gene symbol (but different Ensembl gene id)
+## Which rows have same gene symbol (but different Ensembl gene id)
 gene_sym.duplicated <- which(gene_sym %in% gene_sym[which(duplicated(gene_sym))])
 
-# Which genes are have duplicated entries
+## Which genes are have duplicated entries
 gene_sym.duplicated.unique <- unique(gene_sym[gene_sym.duplicated])
 
-# Make placeholder matrix for duplicate gene symbols
+## Make placeholder matrix for duplicate gene symbols
 raw_mtx_dedup <- Matrix(data=0,nrow=length(gene_sym.duplicated.unique),ncol=ncol(raw_mtx))
 rownames(raw_mtx_dedup) <- gene_sym.duplicated.unique
 colnames(raw_mtx_dedup) <- colnames(raw_mtx)
 
-# Combine counts from genes with same gene symbol (but different Ensembl gene id)
+## Combine counts from genes with same gene symbol (but different Ensembl gene id)
 for(i in seq_along(gene_sym.duplicated)){
   curGene <- gene_sym[gene_sym.duplicated[i]]
   curRow <- gene_sym.duplicated.unique == curGene
   raw_mtx_dedup[curRow,] <- raw_mtx_dedup[curRow,] + raw_mtx[gene_sym.duplicated[i],]
 }
 
-# Merged combined counts duplicate gene symbol with matrix of unique gene symbol counts
+## Merged combined counts duplicate gene symbol with matrix of unique gene symbol counts
 raw_mtx <- raw_mtx[-gene_sym.duplicated,]
 rownames(raw_mtx) <- gene_sym[-gene_sym.duplicated]
 raw_mtx <- rbind(raw_mtx,raw_mtx_dedup)
 
-#raw_mtx <- kallisto.GEX
 tot_counts <- Matrix::colSums(raw_mtx)
-summary(tot_counts)
-```
-
-    ##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-    ##     0.0     1.0     1.0   132.1    14.0 38379.0
-
-``` r
 bc_rank <- DropletUtils::barcodeRanks(raw_mtx, lower = 10)
 gex.inflection <- S4Vectors::metadata(bc_rank)[["inflection"]]
 gex.aboveInf <- names(which(tot_counts > gex.inflection))
-head(gex.aboveInf)
-```
 
-    ## [1] "AAACCTGAGAAACCTA" "AAACCTGAGCAGATCG" "AAACCTGAGCCGTCGT" "AAACCTGAGCGTCAAG"
-    ## [5] "AAACCTGAGCGTGTCC" "AAACCTGAGCGTTGCC"
-
-``` r
 GEX.knee_plot <- knee_plot_auc(bc_rank)
 GEX.knee_plot
 ```
-
-    ## Warning: Transformation introduced infinite values in continuous x-axis
 
 ![](Load-unfiltered-data_files/figure-gfm/loadGEX-1.png)<!-- -->
 
@@ -247,24 +121,11 @@ kallisto.GEX <- raw_mtx
 ## Load ADT data from titration dataset
 
 ``` r
-ADT.res_mat <- read_count_output(kallistobusDirADT, name = "cells_x_genes")
-dim(ADT.res_mat)
-```
+ADT.res_mat <- read_kallisto_data(kallistobusDirADT)
 
-    ## [1]     52 504629
-
-``` r
 ADT.tot_counts <- Matrix::colSums(ADT.res_mat)
-summary(ADT.tot_counts)
-```
-
-    ##      Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
-    ##      0.00      1.00      2.00     35.66      3.00 153439.00
-
-``` r
 ADT.bc_rank <- DropletUtils::barcodeRanks(ADT.res_mat, lower = 10)
 
-#ADT.knee_plot <- knee_plot(ADT.bc_rank)
 ADT.knee_plot <- knee_plot_highlight(ADT.bc_rank, highlight=gex.aboveInf)
 ADT.knee_plot
 ```
@@ -290,18 +151,12 @@ CSC.ADT.uncorrected <- CSC.ADT.uncorrected[rownames(CSC.ADT.uncorrected) != "unm
 ## Load HTO data from titration dataset
 
 ``` r
-HTO.res_mat <- read_count_output(kallistobusDirHTO, name = "cells_x_genes")
-dim(HTO.res_mat)
-```
+HTO.res_mat <- read_kallisto_data(kallistobusDirHTO)
 
-    ## [1]      6 491492
-
-``` r
 HTO.tot_counts <- Matrix::colSums(HTO.res_mat)
 HTO.bc_rank <- DropletUtils::barcodeRanks(HTO.res_mat, lower = 10)
 
 HTO.knee_plot <- knee_plot_highlight(HTO.bc_rank, highlight=gex.aboveInf)
-#HTO.knee_plot <- knee_plot(HTO.bc_rank)
 HTO.knee_plot
 ```
 
@@ -311,11 +166,8 @@ HTO.knee_plot
 kallisto.HTO <- HTO.res_mat
 
 knee_plots_combined <- cowplot::plot_grid(GEX.knee_plot, ADT.knee_plot, HTO.knee_plot, labels=c("mRNA","ADT","HTO"), nrow=1, label_size=panel.label_size-1, vjust=panel.label_vjust, hjust=panel.label_hjust)
-```
 
-    ## Warning: Transformation introduced infinite values in continuous x-axis
 
-``` r
 png(file=file.path(outdir,"Supplementary Figure S4.png"), width=figure.width.full, height=2.5, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
 knee_plots_combined
 dev.off()
@@ -338,12 +190,11 @@ CSC.HTO.uncorrected <- cbind(CSC.HTO.uncorrected,CSC.HTO.uncorrected.dense)
 CSC.HTO.uncorrected <- CSC.HTO.uncorrected[rownames(CSC.HTO.uncorrected) != "unmapped",]
 ```
 
-### 10X DATASETS
+# 10X DATASETS
 
 ## Load GEX data from 10X datasets
 
 ``` r
-data.10X.dir <- file.path(data.drive,"data","10XDatasets")
 data.10X.datasets <- c("PBMC_1k_GEXFeature_v3","PBMC_10k_GEXFeature_v3","PBMC_GEXFeatureVDJ_v1")
 data.10X.datasets.dir <- file.path(data.10X.dir,data.10X.datasets)
 names(data.10X.datasets.dir) <- data.10X.datasets
@@ -352,13 +203,6 @@ names(data.10X.datasets.dir) <- data.10X.datasets
 data.10X.datasets.gex.dir <- file.path(data.10X.datasets.dir,"raw_feature_bc_matrix")
 names(data.10X.datasets.gex.dir) <- data.10X.datasets
 data.10X.datasets.gex <- lapply(data.10X.datasets.gex.dir, function(dir)Read10X(data.dir=dir)$`Gene Expression`)
-```
-
-    ## 10X data contains more than one type and is being returned as a list containing matrices of each type.
-    ## 10X data contains more than one type and is being returned as a list containing matrices of each type.
-    ## 10X data contains more than one type and is being returned as a list containing matrices of each type.
-
-``` r
 data.10X.datasets.gex.bc_rank <- lapply(data.10X.datasets.gex,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
 data.10X.datasets.gex.tot_counts <- lapply(data.10X.datasets.gex,function(raw_mtx)tot_counts <- Matrix::colSums(raw_mtx))
 
@@ -384,7 +228,7 @@ sapply(data.10X.datasets.gex.aboveInf,length)
 
 ``` r
 ## Draw knee plots
-knee_plots <- lapply(data.10X.datasets.gex.bc_rank,function(x)knee_plot_auc(x)+theme(legend.position="none"))
+data.10X.datasets.knee_plots <- lapply(data.10X.datasets.gex.bc_rank,function(x)knee_plot_auc(x)+theme(legend.position="none"))
 
 rm(data.10X.datasets.gex)
 rm(data.10X.datasets.gex.bc_rank)
@@ -393,10 +237,12 @@ rm(data.10X.datasets.gex.tot_counts)
 
 ## Load Kallisto ADT data
 
-``` r
-## 10Xv3 chemestry needs to translate feature barcodes to GEX barcodes to be compatible
-## Can be downloaded here: https://github.com/10XGenomics/cellranger/blob/master/lib/python/cellranger/barcodes/translation/3M-february-2018.txt.gz
+10Xv3 chemestry needs to translate feature barcodes to GEX barcodes to
+be compatible. Traslation matrix can be downloaded here:
+<https://github.com/10XGenomics/cellranger/blob/master/lib/python/cellranger/barcodes/translation/3M-february-2018.txt.gz>
 
+``` r
+## Translate V3 feature barcodes into cell barcodes for using 
 translateV3 <- read.table("F:/data/10XDatasets/10xv3_feature_to_gex_barcode_translation.txt", header=FALSE)
 translateV3.names <- translateV3[,1]
 translateV3 <- translateV3[,2]
@@ -404,7 +250,8 @@ names(translateV3) <- translateV3.names
 
 data.10X.datasets.adt.kallisto.dir <- sapply(data.10X.datasets.dir,function(datasetDir)dir(path=file.path(datasetDir,"kallisto","features"), pattern="counts_unfiltered", recursive=TRUE, full.names=TRUE, include.dirs=TRUE))
 
-data.10X.datasets.adt.kallisto <- lapply(data.10X.datasets.adt.kallisto.dir,function(dir)read_count_output(dir, name = "cells_x_genes"))
+data.10X.datasets.adt.kallisto <- lapply(data.10X.datasets.adt.kallisto.dir,function(dir)read_kallisto_data(dir))
+
 lapply(data.10X.datasets.adt.kallisto,dim)
 ```
 
@@ -419,13 +266,16 @@ lapply(data.10X.datasets.adt.kallisto,dim)
 
 ``` r
 data.10X.datasets.adt.kallisto[grep("_v3$",data.10X.datasets)] <- lapply(data.10X.datasets.adt.kallisto[grep("_v3$",data.10X.datasets)],function(data){colnames(data) <- translateV3[colnames(data)]; return(data)})
-#data.10X.datasets.adt.kallisto.bc_rank <- lapply(data.10X.datasets.adt.kallisto,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
 
-#adt.kallist.aboveInf <- names(which(Matrix::colSums(data.10X.datasets.adt.kallisto[[1]]) > S4Vectors::metadata(data.10X.datasets.adt.kallisto.bc_rank[[1]])[["inflection"]]))
+data.10X.datasets.adt.kallisto.bc_rank <- lapply(data.10X.datasets.adt.kallisto,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
 
-#knee_plots.adt.kallisto <- lapply(data.10X.datasets.adt.kallisto.bc_rank,knee_plot)
-#cowplot::plot_grid(plotlist=knee_plots.adt.kallisto, nrow=1)
+adt.kallist.aboveInf <- names(which(Matrix::colSums(data.10X.datasets.adt.kallisto[[1]]) > S4Vectors::metadata(data.10X.datasets.adt.kallisto.bc_rank[[1]])[["inflection"]]))
+
+knee_plots.adt.kallisto <- lapply(data.10X.datasets.adt.kallisto.bc_rank,knee_plot)
+cowplot::plot_grid(plotlist=knee_plots.adt.kallisto, nrow=1)
 ```
+
+![](Load-unfiltered-data_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
 
 ## Load CSC ADT data
 
@@ -445,9 +295,7 @@ names(data.10X.datasets.adt.csc.dir) <- data.10X.datasets
 names(data.10X.datasets.adt.csc.dense.dir) <- data.10X.datasets
 
 data.10X.datasets.adt.csc <- lapply(data.10X.datasets.adt.csc.dir,function(dir)Read10X(data.dir=dir, gene.column=1))
-#lapply(data.10X.datasets.adt.csc,dim)
 data.10X.datasets.adt.csc.dense <- lapply(data.10X.datasets.adt.csc.dense.dir,function(dir)read.table(file=dir))
-#lapply(data.10X.datasets.adt.csc.dense,dim)
 data.10X.datasets.adt.csc <- lapply(data.10X.datasets,function(dataset)Matrix::cbind2(data.10X.datasets.adt.csc[[dataset]],Matrix::Matrix(as.matrix(data.10X.datasets.adt.csc.dense[[dataset]]))))
 names(data.10X.datasets.adt.csc) <- data.10X.datasets
 data.10X.datasets.adt.csc <- lapply(data.10X.datasets.adt.csc,function(data)data[rownames(data) != "unmapped",])
@@ -455,20 +303,20 @@ data.10X.datasets.adt.csc <- lapply(data.10X.datasets.adt.csc,function(data)data
 data.10X.datasets.adt.csc[grep("_v3$",data.10X.datasets)] <- lapply(data.10X.datasets.adt.csc[grep("_v3$",data.10X.datasets)],function(data){colnames(data) <- translateV3[colnames(data)]; return(data)})
 
 data.10X.datasets.adt.csc_nc <- lapply(data.10X.datasets.adt.csc_nc.dir,function(dir)Read10X(data.dir=dir, gene.column=1))
-#lapply(data.10X.datasets.adt.csc_nc,dim)
 data.10X.datasets.adt.csc_nc.dense <- lapply(data.10X.datasets.adt.csc_nc.dense.dir,function(dir)read.table(file=dir))
-#lapply(data.10X.datasets.adt.csc_nc.dense,dim)
 data.10X.datasets.adt.csc_nc <- lapply(data.10X.datasets,function(dataset)Matrix::cbind2(data.10X.datasets.adt.csc_nc[[dataset]],Matrix::Matrix(as.matrix(data.10X.datasets.adt.csc_nc.dense[[dataset]]))))
 names(data.10X.datasets.adt.csc_nc) <- data.10X.datasets
 data.10X.datasets.adt.csc_nc <- lapply(data.10X.datasets.adt.csc_nc,function(data)data[rownames(data) != "unmapped",])
 
 data.10X.datasets.adt.csc_nc[grep("_v3$",data.10X.datasets)] <- lapply(data.10X.datasets.adt.csc_nc[grep("_v3$",data.10X.datasets)],function(data){colnames(data) <- translateV3[colnames(data)]; return(data)})
 
-#data.10X.datasets.adt.csc.bc_rank <- lapply(data.10X.datasets.adt.csc,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
+data.10X.datasets.adt.csc.bc_rank <- lapply(data.10X.datasets.adt.csc,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
 
-#knee_plots.adt.csc <- lapply(data.10X.datasets.adt.csc.bc_rank,knee_plot)
-#cowplot::plot_grid(plotlist=knee_plots.adt.csc, nrow=1)
+knee_plots.adt.csc <- lapply(data.10X.datasets.adt.csc.bc_rank,knee_plot)
+cowplot::plot_grid(plotlist=knee_plots.adt.csc, nrow=1)
 ```
+
+![](Load-unfiltered-data_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
 ## Load CellRanger featureOnly ADT data
 
@@ -489,13 +337,19 @@ lapply(data.10X.datasets.adt.cellranger,dim)
     ## [1]     17 737280
 
 ``` r
-#data.10X.datasets.adt.cellranger.bc_rank <- lapply(data.10X.datasets.adt.cellranger,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
+data.10X.datasets.adt.cellranger.bc_rank <- lapply(data.10X.datasets.adt.cellranger,function(raw_mtx)DropletUtils::barcodeRanks(raw_mtx, lower = 10))
 
-#knee_plots.adt.cellranger <- lapply(data.10X.datasets.adt.cellranger.bc_rank,knee_plot)
-#cowplot::plot_grid(plotlist=knee_plots.adt.cellranger, nrow=1)
-
-#cowplot::plot_grid(plotlist=c(knee_plots.adt.cellranger,knee_plots.adt.csc,knee_plots.adt.kallisto), labels=data.10X.datasets, nrow=3)
+knee_plots.adt.cellranger <- lapply(data.10X.datasets.adt.cellranger.bc_rank,knee_plot)
+cowplot::plot_grid(plotlist=knee_plots.adt.cellranger, nrow=1)
 ```
+
+![](Load-unfiltered-data_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
+
+``` r
+cowplot::plot_grid(plotlist=c(knee_plots.adt.cellranger,knee_plots.adt.csc,knee_plots.adt.kallisto), labels=data.10X.datasets, nrow=3)
+```
+
+![](Load-unfiltered-data_files/figure-gfm/unnamed-chunk-5-2.png)<!-- -->
 
 ## Save data
 
@@ -506,7 +360,8 @@ save(file="data/data.10X.datasets.Rdata",
      data.10X.datasets.adt.csc, 
      data.10X.datasets.adt.csc_nc, 
      data.10X.datasets.adt.cellranger, 
-     data.10X.datasets.gex.aboveInf)
+     data.10X.datasets.gex.aboveInf,
+     data.10X.datasets.knee_plots)
 
 save(file="data/data.HTO.Rdata",
      kallisto.HTO,

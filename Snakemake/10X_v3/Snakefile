@@ -1,0 +1,146 @@
+cells=10000
+cores=16
+memory="64G"
+whitelist="include/10xv3_whitelist.txt"
+featureRef="include/feature-ref.csv"
+chemistry="10xv3"
+HTO_num=0
+HTO_skip=HTO_num+2
+
+def get_trim_length(wcs):
+	Trim = "10"
+	if wcs.type == 'HTO':
+		Trim = "0"
+	return [Trim]
+
+rule concat:
+	input:
+		R11="fastq/{sample}_L001_R1_001.fastq.gz",
+		R12="fastq/{sample}_L002_R1_001.fastq.gz",
+		R21="fastq/{sample}_L001_R2_001.fastq.gz",
+		R22="fastq/{sample}_L002_R2_001.fastq.gz"	
+	output:
+		R1="fastq_merged/{sample}_L001_R1_001.fastq.gz",
+		R2="fastq_merged/{sample}_L001_R2_001.fastq.gz"
+	shell:
+		"cat {input.R11} {input.R12} > {output.R1} & "
+		"cat {input.R21} {input.R22} > {output.R2}"
+
+rule citeseqcount:
+	input:
+		R1="fastq_merged/{sample}_L001_R1_001.fastq.gz",
+		R2="fastq_merged/{sample}_L001_R2_001.fastq.gz",
+		features="include/cite-seq-count/CSC_{type}-ref.csv",
+		whitelist={whitelist}
+	params:
+		Trim=get_trim_length
+	output:
+		directory("cite-seq-count/{sample}_d{hamming}_{type}")
+	shell:
+		"CITE-seq-Count -T {cores} --max-error {wildcards.hamming} -R1 {input.R1} -R2 {input.R2} -t {input.features} -cbf 1 -cbl 16 -umif 17 -umil 28 -o {output} -wl {input.whitelist} -cells {cells} -u unmapped_{wildcards.sample}.csv --start-trim {params.Trim}"
+
+rule citeseqcount_nocorrect:
+        input:
+                R1="fastq_merged/{sample}_L001_R1_001.fastq.gz",
+                R2="fastq_merged/{sample}_L001_R2_001.fastq.gz",
+                features="include/cite-seq-count/CSC_{type}-ref.csv",
+                whitelist={whitelist}
+        params:
+                Trim=get_trim_length
+        output:
+                directory("cite-seq-count/{sample}_d{hamming}_{type}_nocorrect")
+        shell:
+                "CITE-seq-Count -T {cores} --no_umi_correction --max-error {wildcards.hamming} -R1 {input.R1} -R2 {input.R2} -t {input.features} -cbf 1 -cbl 16 -umif 17 -umil 28 -o {output} -wl {input.whitelist} -cells {cells} -u unmapped_{wildcards.sample}.csv --start-trim {params.Trim}"
+
+rule featureList_ADT:
+	input:
+		{featureRef}
+	output:
+		"include/ADT-ref.csv"
+	shell:
+		"tail -n +{HTO_skip} {input} > {output}"
+
+rule featureList_HTO:
+	input:
+		{featureRef}
+	output:
+		"include/HTO-ref.csv"
+	shell:
+		"tail -n +2 {input} | head -n {HTO_num} > {output}"
+
+rule featureList_citeseqcount:
+	input:	
+		"include/{type}-ref.csv"
+	output:
+		"include/cite-seq-count/CSC_{type}-ref.csv"
+	shell:
+		"awk -F, '{{print $5\",\"$1}}' {input} > {output}"
+
+rule featureList_kallisto:
+        input:
+                "include/{type}-ref.csv"
+        output:
+                "include/kallisto/kallisto_{type}-ref.csv"
+        shell:
+                "awk -F, '{{print $1\",\"$5}}' {input} > {output}"
+
+rule featureList_kallisto_addBase:
+        input:
+                "include/{type}-ref.csv"
+        output:
+                "include/kallisto/kallisto_{type}_{addBase}-ref.csv"
+        shell:
+                "awk -F, '{{print $1\",\"$5\"{wildcards.addBase}\"}}' {input} > {output}"
+
+rule kallisto_GEX_count:
+	input:
+		index="include/kallisto/idx_human.idx",
+		t2g="include/kallisto/t2g_human.txt",
+		R1="fastq_merged/{sample}_L001_R1_001.fastq.gz",
+                R2="fastq_merged/{sample}_L001_R2_001.fastq.gz"
+	output:
+		directory("kallisto/{sample}")
+	shell:
+		"kb count -i {input.index} -g {input.t2g} -x {chemistry} -t {cores} -m {memory} -w {whitelist} -o {output} {input.R1} {input.R2}"
+
+rule kallisto_kite:
+	input:
+		"include/kallisto/kallisto_{type}-ref.csv"
+	output:
+		t2g="include/kallisto/mismatch_t2g_{type}_{k}.txt",
+		fa="include/kallisto/mismatch_{type}_{k}.fa"
+	shell:
+		"python3 ~/kite/featuremap/featuremap.py {input} --t2g {output.t2g} --fa {output.fa}"
+		
+rule kallisto_kite_index:
+	input:
+		"include/kallisto/mismatch_{type}_{k}.fa"
+	output:
+		"include/kallisto/mismatch_{type}_{k}.idx"
+	shell:
+		"module load kallisto; "
+		"kallisto index -i {output} -k {wildcards.k} {input}"
+
+rule kallisto_feature_count:
+	input:
+		index="include/kallisto/mismatch_{type}_{k}.idx",
+		t2g="include/kallisto/mismatch_t2g_{type}_{k}.txt",
+                R1="fastq_merged/{sample}_L001_R1_001.fastq.gz",
+                R2="fastq_merged/{sample}_L001_R2_001.fastq.gz"
+	output:
+		directory("kallisto/features/{sample}.{type}_{k}")
+	shell:
+                "kb count -i {input.index} -g {input.t2g} -x {chemistry} -t {cores} -w {whitelist} -o {output} {input.R1} {input.R2}"
+
+rule cellranger_feature:
+	input:	
+		transcriptome="/gpfs/data/sequence/cellranger-refdata/refdata-cellranger-GRCh38-3.0.0",
+		libraries="include/cellranger/libraries_{id}.csv",
+		featureRef="include/cellranger/feature-ref_{id}.csv"
+	params:
+		chemistry="SC3Pv3"
+	output:
+		directory("cellranger_{id}")
+	shell:
+		"module unload miniconda3; module load cellranger/3.1.0; "
+		"cellranger count --id={output} --transcriptome={input.transcriptome} --expect-cells={cells} --libraries={input.libraries} --feature-ref={input.featureRef} --chemistry={params.chemistry} --nosecondary --nopreflight --disable-ui --localcores={cores}"

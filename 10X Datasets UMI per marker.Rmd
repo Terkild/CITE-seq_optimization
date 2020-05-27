@@ -1,45 +1,48 @@
 ---
-title: "CITE-seq optimization - Make Seurat Object"
+title: "CITE-seq optimization - 10X datasets: UMI per marker plot"
 author: "Terkild Brink Buus"
 date: "30/3/2020"
 output: github_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set()
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 options(stringsAsFactors=FALSE)
 ```
 
-## Load libraries etc.
+## Load utilities
 
-```{r, message=FALSE, warning=FALSE}
+Including libraries, plotting and color settings and custom utility functions
+
+```{r loadLibraries, results='hide', message=FALSE, warning=FALSE}
 set.seed(114)
-require("Seurat", quietly=T)
 require("tidyverse", quietly=T)
-require("Matrix", quietly=T)
-require("DropletUtils", quietly=T)
+library("Matrix", quietly=T)
 
 ## Load ggplot theme and defaults
 source("R/ggplot_settings.R")
 
-## Load helper functions (ggplot themes, biexp transformation etc.)
+## Load helper functions
 source("R/Utilities.R")
 
-## Load predefined color schemes
-source("R/color.R")
-
-outdir <- "C:/Users/Terkild/OneDrive - Københavns Universitet/Koralovlab/ECCITE-seq/20200106 Titration 1"
+outdir <- "figures"
+data.10X <- "data/data.10X.datasets.Rdata"
 ```
 
 ## Load data
 
+10X datasets were preprocessed in the [Load unfiltered data vignette](Load-unfiltered-data.md)
+
 ```{r}
-load(file="data/data.10X.datasets.Rdata")
+load(file=data.10X)
 ```
 
-## Draw UMI per marker for 10X datasets with comparable antibody panels
+## Draw UMI per marker
 
-```{r}
+These three 10X dataset used the same panel of antibodies at three conditions, 3' V3 chemistry at ~1,000 and ~10,000 cells or 5' at 10,000 cells using TotalSeqB or TotalSeqC antibodies, respectively.
+
+```{r, fig.height=3, fig.width=7}
+## Extract data from list into a combined data.frame
 for(i in seq_along(data.10X.datasets)){
   dataset <- data.10X.datasets[i]
   
@@ -60,11 +63,15 @@ for(i in seq_along(data.10X.datasets)){
   }
 }
 
+## Convert data into "long format" for plotting with ggplot
 plotData <- plotData %>% pivot_longer(c(-Marker, -Dataset))
+
+## Rename isotype controls to get shorter names
 plotData$Marker <- gsub("isotype_control_","",plotData$Marker)
 plotData$subset <- factor(as.character(plotData$name), levels=c("EmptyDrop","Cell"))
 plotData$Dataset <- factor(as.character(plotData$Dataset), levels=data.10X.datasets)
-    
+
+## Make plot
 data.10X.markerBarplot <- ggplot(plotData, aes(x=Marker, y=value/10^6, fill=subset)) + 
   geom_bar(stat="identity", position="dodge", color="black", width=0.65) + 
   scale_y_continuous(expand=c(0,0,0.05,0)) + 
@@ -78,13 +85,39 @@ data.10X.markerBarplot <- ggplot(plotData, aes(x=Marker, y=value/10^6, fill=subs
         legend.title=element_blank(),
         legend.background=element_blank())
 
+```
 
-data.10X.GEXrank <- cowplot::plot_grid(plotlist=knee_plots, labels=data.10X.datasets, hjust=-0.65, vjust=1.6, label_size=7, nrow=1)
+## Final figure
+
+```{r, fig.height=5, fig.width=7}
+## Include knee_plots from preprocessing in the figure
+data.10X.GEXrank <- cowplot::plot_grid(plotlist=data.10X.datasets.knee_plots, 
+                                       labels=data.10X.datasets, 
+                                       hjust=-0.65, 
+                                       vjust=1.6, 
+                                       label_size=7, 
+                                       nrow=1)
+
+p.figure <- cowplot::plot_grid(data.10X.GEXrank, data.10X.markerBarplot, 
+                               labels=c("A", "B"), 
+                               ncol=1, 
+                               rel_heights=c(2,3), 
+                               label_size=panel.label_size, 
+                               vjust=panel.label_vjust, 
+                               hjust=panel.label_hjust)
 
 
+png(file=file.path(outdir,"Supplementary Figure S6.png"), 
+    width=figure.width.full, 
+    height=5, 
+    units = figure.unit, 
+    res=figure.resolution, 
+    antialias=figure.antialias)
 
-png(file=file.path(outdir,"Supplementary Figure S5.png"), width=figure.width.full, height=5, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
-cowplot::plot_grid(data.10X.GEXrank, data.10X.markerBarplot, labels=c("A", "B"), ncol=1, rel_heights=c(2,3), label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust)
+  p.figure
+
 dev.off()
+
+p.figure
 
 ```

@@ -3,166 +3,57 @@ CITE-seq optimization - Demux, Pre-process and downsample
 Terkild Brink Buus
 30/3/2020
 
-## Load libraries etc.
+## Load utilities
+
+Including libraries, plotting and color settings and custom utility
+functions
 
 ``` r
 set.seed(114)
 require("Seurat", quietly=T)
 require("tidyverse", quietly=T)
-```
-
-    ## -- Attaching packages -------------------------------------------------------------------------------- tidyverse 1.3.0 --
-
-    ## v ggplot2 3.3.0     v purrr   0.3.3
-    ## v tibble  3.0.0     v dplyr   0.8.5
-    ## v tidyr   1.0.2     v stringr 1.4.0
-    ## v readr   1.3.1     v forcats 0.5.0
-
-    ## -- Conflicts ----------------------------------------------------------------------------------- tidyverse_conflicts() --
-    ## x dplyr::filter() masks stats::filter()
-    ## x dplyr::lag()    masks stats::lag()
-
-``` r
 library("Matrix", quietly=T)
-```
-
-    ## 
-    ## Attaching package: 'Matrix'
-
-    ## The following objects are masked from 'package:tidyr':
-    ## 
-    ##     expand, pack, unpack
-
-``` r
 library("DropletUtils", quietly=T)
-```
 
-    ## 
-    ## Attaching package: 'BiocGenerics'
+## Load ggplot theme and defaults
+source("R/ggplot_settings.R")
 
-    ## The following objects are masked from 'package:parallel':
-    ## 
-    ##     clusterApply, clusterApplyLB, clusterCall, clusterEvalQ,
-    ##     clusterExport, clusterMap, parApply, parCapply, parLapply,
-    ##     parLapplyLB, parRapply, parSapply, parSapplyLB
-
-    ## The following object is masked from 'package:Matrix':
-    ## 
-    ##     which
-
-    ## The following objects are masked from 'package:dplyr':
-    ## 
-    ##     combine, intersect, setdiff, union
-
-    ## The following objects are masked from 'package:stats':
-    ## 
-    ##     IQR, mad, sd, var, xtabs
-
-    ## The following objects are masked from 'package:base':
-    ## 
-    ##     anyDuplicated, append, as.data.frame, basename, cbind, colnames,
-    ##     dirname, do.call, duplicated, eval, evalq, Filter, Find, get, grep,
-    ##     grepl, intersect, is.unsorted, lapply, Map, mapply, match, mget,
-    ##     order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank,
-    ##     rbind, Reduce, rownames, sapply, setdiff, sort, table, tapply,
-    ##     union, unique, unsplit, which, which.max, which.min
-
-    ## 
-    ## Attaching package: 'S4Vectors'
-
-    ## The following object is masked from 'package:Matrix':
-    ## 
-    ##     expand
-
-    ## The following objects are masked from 'package:dplyr':
-    ## 
-    ##     first, rename
-
-    ## The following object is masked from 'package:tidyr':
-    ## 
-    ##     expand
-
-    ## The following object is masked from 'package:base':
-    ## 
-    ##     expand.grid
-
-    ## 
-    ## Attaching package: 'IRanges'
-
-    ## The following objects are masked from 'package:dplyr':
-    ## 
-    ##     collapse, desc, slice
-
-    ## The following object is masked from 'package:purrr':
-    ## 
-    ##     reduce
-
-    ## The following object is masked from 'package:grDevices':
-    ## 
-    ##     windows
-
-    ## Welcome to Bioconductor
-    ## 
-    ##     Vignettes contain introductory material; view with
-    ##     'browseVignettes()'. To cite Bioconductor, see
-    ##     'citation("Biobase")', and for packages 'citation("pkgname")'.
-
-    ## 
-    ## Attaching package: 'matrixStats'
-
-    ## The following objects are masked from 'package:Biobase':
-    ## 
-    ##     anyMissing, rowMedians
-
-    ## The following object is masked from 'package:dplyr':
-    ## 
-    ##     count
-
-    ## 
-    ## Attaching package: 'DelayedArray'
-
-    ## The following objects are masked from 'package:matrixStats':
-    ## 
-    ##     colMaxs, colMins, colRanges, rowMaxs, rowMins, rowRanges
-
-    ## The following object is masked from 'package:purrr':
-    ## 
-    ##     simplify
-
-    ## The following objects are masked from 'package:base':
-    ## 
-    ##     aperm, apply, rowsum
-
-    ## 
-    ## Attaching package: 'SummarizedExperiment'
-
-    ## The following object is masked from 'package:Seurat':
-    ## 
-    ##     Assays
-
-``` r
-driveLetter <-"F:/"
-t2g.file <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/t2g_cellranger.txt")
-kallistobusDir <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/gex/c1/counts_unfiltered")
-kallistobusDirADT <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/A1_S5.ADT_15/counts_unfiltered")
-kallistobusDirHTO <- file.path(driveLetter,"Projects/ECCITE-seq/TotalSeqC_TitrationA/kallisto/features/H1_S6.HTO_A_13/counts_unfiltered")
-
-## Load helper functions (ggplot themes, biexp transformation etc.)
+## Load helper functions
 source("R/Utilities.R")
 
 ## Load predefined color schemes
 source("R/color.R")
+
+read_kallisto_data <- function(file.path){
+  ## Load mtx and transpose it
+  res_mat <- as(t(readMM(file.path(file.path,"cells_x_genes.mtx"))), 'CsparseMatrix') 
+  ## Attach genes
+  rownames(res_mat) <- read.csv(file.path(file.path,"cells_x_genes.genes.txt"), sep = '\t', header = F)[,1]
+  ## Attach barcodes
+  colnames(res_mat) <- read.csv(file.path(file.path,"cells_x_genes.barcodes.txt"), header = F, sep = '\t')[,1]
+  
+  return(res_mat)
+}
+
+data.drive <- "F:/"
+data.project.dir <- "Projects/ECCITE-seq/TotalSeqC_TitrationA"
+outdir <- "figures"
+t2g.file <- file.path(data.drive,data.project.dir,"/kallisto/t2g_cellranger.txt")
+
+kallistobusDir <- file.path(data.drive,data.project.dir,"kallisto/gex/c1/counts_unfiltered")
+kallistobusDirADT <- file.path(data.drive,data.project.dir,"kallisto/features/A1_S5.ADT_15/counts_unfiltered")
+kallistobusDirHTO <- file.path(data.drive,data.project.dir,"kallisto/features/H1_S6.HTO_A_13/counts_unfiltered")
+
+data.abpanel <- "data/Supplementary_Table_1.xlsx"
 ```
 
-## Load GEX data
+## Load data
 
 From kallisto-bustools output. Modified from
 <https://github.com/Sarah145/scRNA_pre_process>
 
 ``` r
-raw_mtx <- as(t(readMM(file.path(kallistobusDir,"cells_x_genes.mtx"))), 'CsparseMatrix') # load mtx and transpose it
-rownames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.genes.txt"), sep = '\t', header = F)[,1] # attach genes
-colnames(raw_mtx) <- read.csv(file.path(kallistobusDir,"cells_x_genes.barcodes.txt"), header = F, sep = '\t')[,1] # attach barcodes
+raw_mtx <- read_kallisto_data(kallistobusDir)
 
 t2g <- unique(read.csv(t2g.file, sep = '\t', header=F)[,2:3]) # load t2g file
 t2g <- data.frame(t2g[,2], row.names = t2g[,1])
@@ -192,93 +83,44 @@ rownames(raw_mtx) <- gene_sym[-gene_sym.duplicated]
 raw_mtx <- rbind(raw_mtx,raw_mtx_dedup)
 
 tot_counts <- Matrix::colSums(raw_mtx)
-summary(tot_counts)
-```
-
-    ##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-    ##     0.0     1.0     1.0   132.1    14.0 38379.0
-
-``` r
 bc_rank <- DropletUtils::barcodeRanks(raw_mtx, lower = 10)
 
-knee_plot(bc_rank)
-```
+GEX.knee_plot <- knee_plot(bc_rank)
 
-    ## Warning: Transformation introduced infinite values in continuous y-axis
-    
-    ## Warning: Transformation introduced infinite values in continuous y-axis
-
-![](Demux_Preprocess_Downsample_files/figure-gfm/loadGEX-1.png)<!-- -->
-
-``` r
 kallisto.GEX <- raw_mtx
 ```
 
-## Load Kallisto HTO data
+# Load Kallisto HTO data
 
 ``` r
-res_mat <- read_count_output(kallistobusDirHTO, name = "cells_x_genes")
-dim(res_mat)
+HTO.res_mat <- read_kallisto_data(kallistobusDirHTO)
+
+HTO.tot_counts <- Matrix::colSums(HTO.res_mat)
+HTO.bc_rank <- DropletUtils::barcodeRanks(HTO.res_mat, lower = 10)
+
+HTO.knee_plot <- knee_plot(HTO.bc_rank)
+kallisto.HTO <- HTO.res_mat
 ```
 
-    ## [1]      6 491492
+# Load Kallisto ADT data
 
 ``` r
-tot_counts <- Matrix::colSums(res_mat)
-summary(tot_counts)
+ADT.res_mat <- read_kallisto_data(kallistobusDirADT)
+
+ADT.tot_counts <- Matrix::colSums(ADT.res_mat)
+ADT.bc_rank <- DropletUtils::barcodeRanks(ADT.res_mat, lower = 10)
+
+ADT.knee_plot <- knee_plot(ADT.bc_rank)
+kallisto.ADT <- ADT.res_mat
 ```
 
-    ##      Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
-    ##      0.00      1.00      2.00     58.07      3.00 111852.00
+Plot Barcode-rank plots
 
 ``` r
-bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
-
-knee_plot(bc_rank)
+cowplot::plot_grid(GEX.knee_plot, HTO.knee_plot, ADT.knee_plot, nrow=1, labels=c("GEX","HTO","ADT"))
 ```
 
-    ## Warning: Transformation introduced infinite values in continuous y-axis
-    
-    ## Warning: Transformation introduced infinite values in continuous y-axis
-
-![](Demux_Preprocess_Downsample_files/figure-gfm/loadHTO-1.png)<!-- -->
-
-``` r
-kallisto.HTO <- res_mat
-```
-
-## Load Kallisto ADT data
-
-``` r
-res_mat <- read_count_output(kallistobusDirADT, name = "cells_x_genes")
-dim(res_mat)
-```
-
-    ## [1]     52 504629
-
-``` r
-tot_counts <- Matrix::colSums(res_mat)
-summary(tot_counts)
-```
-
-    ##      Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
-    ##      0.00      1.00      2.00     35.66      3.00 153439.00
-
-``` r
-bc_rank <- DropletUtils::barcodeRanks(res_mat, lower = 10)
-
-knee_plot(bc_rank)
-```
-
-    ## Warning: Transformation introduced infinite values in continuous y-axis
-    
-    ## Warning: Transformation introduced infinite values in continuous y-axis
-
-![](Demux_Preprocess_Downsample_files/figure-gfm/loadADT-1.png)<!-- -->
-
-``` r
-kallisto.ADT <- res_mat
-```
+![](Demux_Preprocess_Downsample_files/figure-gfm/unnamed-chunk-1-1.png)<!-- -->
 
 ## Demultiplex by HTO
 
@@ -288,14 +130,7 @@ antibody signal = HTO)
 ``` r
 object <- CreateSeuratObject(counts = kallisto.HTO, assay="HTO.kallisto")
 object <- NormalizeData(object, assay = "HTO.kallisto", normalization.method = "CLR")
-```
 
-    ## Normalizing across features
-
-    ## Warning: Keys should be one or more alphanumeric characters followed by an
-    ## underscore, setting key from hto.kallisto_ to htokallisto_
-
-``` r
 ## Assure the matrices are in the same barcode-space
 commonDrops <- Reduce("intersect",x=list(colnames(kallisto.HTO),colnames(kallisto.ADT),colnames(kallisto.GEX)))
 
@@ -307,19 +142,7 @@ length(commonDrops)
 ``` r
 object <- subset(object, cells=commonDrops)
 object[["ADT.kallisto"]] <- CreateAssayObject(counts=kallisto.ADT[,commonDrops])
-```
-
-    ## Warning: Keys should be one or more alphanumeric characters followed by an
-    ## underscore, setting key from adt.kallisto_ to adtkallisto_
-
-``` r
 object[["RNA.kallisto"]] <- CreateAssayObject(counts=kallisto.GEX[,commonDrops])
-```
-
-    ## Warning: Keys should be one or more alphanumeric characters followed by an
-    ## underscore, setting key from rna.kallisto_ to rnakallisto_
-
-``` r
 Key(object[["RNA.kallisto"]]) <- "rna_"
 Key(object[["ADT.kallisto"]]) <- "adt_"
 Key(object[["HTO.kallisto"]]) <- "hto_"
@@ -330,18 +153,6 @@ object <- MULTIseqDemux(object, assay="HTO.kallisto")
 
 RidgePlot(object, assay = "HTO.kallisto", features = rownames(object[["HTO.kallisto"]]))
 ```
-
-    ## Picking joint bandwidth of 0.128
-
-    ## Picking joint bandwidth of 0.112
-
-    ## Picking joint bandwidth of 0.101
-
-    ## Picking joint bandwidth of 0.114
-
-    ## Picking joint bandwidth of 0.146
-
-    ## Picking joint bandwidth of 0.124
 
 ![](Demux_Preprocess_Downsample_files/figure-gfm/demux-1.png)<!-- -->
 
@@ -386,12 +197,13 @@ object$cellsAtStaining <- factor(c("1000k","1000k","1000k","200k","500k","500k",
 ## Filter dead/dying cells
 
 Based on mitochondrial reads and number of detected genes. Cutoff set to
-15% MT and at least 60 expressed genes by visual inspection.
+15% MT and at least 60 expressed genes by visual inspection. The number
+of expressed genes is low due to the low depth of the GEX sequencing
+(5000 reads/cell)
 
 ``` r
 DefaultAssay(object) <- "RNA.kallisto"
 object[["percent.mt"]] <- PercentageFeatureSet(object, pattern = "^MT-")
-#object[["percent.mt"]][is.nan(object[["percent.mt"]][,1]),1] <- 100
 
 cutoff.percent.mt <- 15
 cutoff.nFeature <- 60
@@ -459,7 +271,11 @@ object <- subset(object, subset=scDblFinder.class=="singlet")
 
 ## Make DSB normalization
 
-<https://mattpm.github.io/dsb/>
+Normalize ADT counts using the “Denoised and Scaled by Background”
+method (<https://mattpm.github.io/dsb/>). This method utilizes the ADT
+signal in non-cell-containing droplets and signal form isotype controls
+to make normalized values. The normalized values correspond to number of
+standard deviations from the background median.
 
 ``` r
 #devtools::install_github(repo = 'MattPM/dsb')
@@ -488,20 +304,6 @@ colnames(plotData) <- c("Marker","Cell","value")
 ggplot(plotData,aes(x=value,y=Marker,fill=object$group[Cell])) + ggridges::geom_density_ridges(alpha=0.5, scale=3, rel_min_height = 0.01) + xlim(-5,30) + facet_grid(~object$group[Cell])
 ```
 
-    ## Picking joint bandwidth of 0.607
-
-    ## Picking joint bandwidth of 0.428
-
-    ## Picking joint bandwidth of 0.368
-
-    ## Picking joint bandwidth of 0.388
-
-    ## Picking joint bandwidth of 0.647
-
-    ## Picking joint bandwidth of 0.467
-
-    ## Warning: Removed 4221 rows containing non-finite values (stat_density_ridges).
-
 ![](Demux_Preprocess_Downsample_files/figure-gfm/dsbnorm-1.png)<!-- -->
 
 ## Preprocess data
@@ -512,20 +314,8 @@ Run standard Seurat preprocessing on RNA modality.
 object <- NormalizeData(object)
 object <- FindVariableFeatures(object)
 object <- ScaleData(object)
-```
-
-    ## Centering and scaling data matrix
-
-``` r
 object <- RunPCA(object, verbose = FALSE)
 object <- FindNeighbors(object, dims = 1:30)
-```
-
-    ## Computing nearest neighbor graph
-
-    ## Computing SNN
-
-``` r
 object <- FindClusters(object, resolution = 0.3)
 ```
 
@@ -542,34 +332,7 @@ object <- FindClusters(object, resolution = 0.3)
 ``` r
 object <- RunTSNE(object,dims=1:30)
 object <- RunUMAP(object,dims=1:30)
-```
 
-    ## Warning: The default method for RunUMAP has changed from calling Python UMAP via reticulate to the R-native UWOT using the cosine metric
-    ## To use Python UMAP via reticulate, set umap.method to 'umap-learn' and metric to 'correlation'
-    ## This message will be shown once per session
-
-    ## 12:39:17 UMAP embedding parameters a = 0.9922 b = 1.112
-
-    ## 12:39:17 Read 12946 rows and found 30 numeric columns
-
-    ## 12:39:17 Using Annoy for neighbor search, n_neighbors = 30
-
-    ## 12:39:17 Building Annoy index with metric = cosine, n_trees = 50
-
-    ## 0%   10   20   30   40   50   60   70   80   90   100%
-
-    ## [----|----|----|----|----|----|----|----|----|----|
-
-    ## **************************************************|
-    ## 12:39:20 Writing NN index file to temp file C:\Users\Terkild\AppData\Local\Temp\Rtmp8wudK1\file3be85b265d07
-    ## 12:39:20 Searching Annoy index using 1 thread, search_k = 3000
-    ## 12:39:24 Annoy recall = 100%
-    ## 12:39:25 Commencing smooth kNN distance calibration using 1 thread
-    ## 12:39:27 Initializing from normalized Laplacian + noise
-    ## 12:39:28 Commencing optimization for 200 epochs, with 610694 positive edges
-    ## 12:39:43 Optimization finished
-
-``` r
 DimPlot(object, group.by="tissue", reduction="tsne")
 ```
 
@@ -585,16 +348,12 @@ DimPlot(object, group.by="group", reduction="tsne")
 DimPlot(object, label=TRUE, reduction="tsne")
 ```
 
-    ## Warning: Using `as.character()` on a quosure is deprecated as of rlang 0.3.0.
-    ## Please use `as_label()` or `as_name()` instead.
-    ## This warning is displayed once per session.
-
 ![](Demux_Preprocess_Downsample_files/figure-gfm/preprocessRNA-3.png)<!-- -->
 
 ## Label and merge clusters into “superclusters”
 
 To make the poulations less complex and for easier visualization, we
-merged the clusters into major cell types
+merged the clusters into major cell types.
 
 ``` r
 ## LINEAGE MARKERS FOR CLUSTERLABELLING
@@ -603,72 +362,19 @@ ADTplots <- lapply(ADTplots,FUN=function(x)x+NoLegend())
 CombinePlots(ADTplots,ncol=5)
 ```
 
-    ## Warning: CombinePlots is being deprecated. Plots should now be combined using
-    ## the patchwork system.
-
 ![](Demux_Preprocess_Downsample_files/figure-gfm/superclustering-1.png)<!-- -->
-
-``` r
-FeaturePlot(object, features=c("CD3D","TRAC"), label=TRUE, reduction="tsne", min.cutoff=1.3, col=c("lightgrey","red"), combine=FALSE)
-```
-
-    ## [[1]]
-
-![](Demux_Preprocess_Downsample_files/figure-gfm/superclustering-2.png)<!-- -->
-
-    ## 
-    ## [[2]]
-
-![](Demux_Preprocess_Downsample_files/figure-gfm/superclustering-3.png)<!-- -->
 
 ``` r
 library("dplyr")
 cluster.markers <- FindAllMarkers(object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
-```
-
-    ## Calculating cluster 0
-
-    ## Calculating cluster 1
-
-    ## Calculating cluster 2
-
-    ## Calculating cluster 3
-
-    ## Calculating cluster 4
-
-    ## Calculating cluster 5
-
-    ## Calculating cluster 6
-
-    ## Calculating cluster 7
-
-    ## Calculating cluster 8
-
-    ## Calculating cluster 9
-
-    ## Calculating cluster 10
-
-    ## Calculating cluster 11
-
-    ## Calculating cluster 12
-
-    ## Calculating cluster 13
-
-    ## Calculating cluster 14
-
-    ## Calculating cluster 15
-
-    ## Calculating cluster 16
-
-``` r
 top5 <- cluster.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_logFC)
 DoHeatmap(object, features = top5$gene, slot = "data") + NoLegend() + ggplot2::scale_fill_gradientn(colors = c("blue", "white", "red"))
 ```
 
-    ## Scale for 'fill' is already present. Adding another scale for 'fill', which
-    ## will replace the existing scale.
+![](Demux_Preprocess_Downsample_files/figure-gfm/superclustering-2.png)<!-- -->
 
-![](Demux_Preprocess_Downsample_files/figure-gfm/superclustering-4.png)<!-- -->
+Combine clusters into superclusters (corresponding roughly to cell
+types)
 
 ``` r
 ## COMBINE CLUSTERS TO SUPERCLUSTERS
@@ -695,13 +401,13 @@ object$supercluster <- factor(superclusters[as.character(Idents(object))],levels
 DimPlot(object, group.by="supercluster", reduction="tsne")
 ```
 
-![](Demux_Preprocess_Downsample_files/figure-gfm/superclustering-5.png)<!-- -->
+![](Demux_Preprocess_Downsample_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
 
 ``` r
 DimPlot(object, group.by="supercluster", reduction="umap")
 ```
 
-![](Demux_Preprocess_Downsample_files/figure-gfm/superclustering-6.png)<!-- -->
+![](Demux_Preprocess_Downsample_files/figure-gfm/unnamed-chunk-3-2.png)<!-- -->
 
 ``` r
 table <- t(table(object$supercluster,object$group))
@@ -722,14 +428,6 @@ round(table/rowSums(table)*100,2)
 ## Make fine-grained clustering
 
 ``` r
-## SEE HOW DIFFERENT GROUPS ARE LOCATED IN PRINCIPAL COMPONENTS
-#temp <- cbind(object@reductions$pca@cell.embeddings[,1:50],FetchData(object, vars=c("group","volume","dilution","tissue")))
-#temp <- temp[temp$tissue=="PBMC",]
-
-#temp2 <- temp %>% pivot_longer(c(-group,-volume,-dilution,-tissue))
-#temp3 <- temp2 %>% group_by(name, group) %>% summarise(mean=median(value))
-#ggplot(temp3,aes(x=name,y=mean,col=group)) + geom_point()
-
 object <- FindClusters(object, resolution = 1.2)
 ```
 
@@ -756,36 +454,6 @@ DimPlot(object, reduction = "umap", label = TRUE) + NoLegend()
 ```
 
 ![](Demux_Preprocess_Downsample_files/figure-gfm/fineClusters-2.png)<!-- -->
-
-``` r
-table(Idents(object),object$sampleID)
-```
-
-    ##     
-    ##        1   2   3   4   5   6 Doublet Negative
-    ##   0  612 721 829 847  55  56       0        0
-    ##   1  319 376 357 664   4   3       0        0
-    ##   2  238 267 303 321  33  31       0        0
-    ##   3   24  23  25  32 412 483       0        0
-    ##   4  166 160 176 270   3   2       0        0
-    ##   5  119 140 171 271   3   1       0        0
-    ##   6  131 156 186 185  11   7       0        0
-    ##   7    0   1   1   2 307 310       0        0
-    ##   8    5   2   6   6 325 259       0        0
-    ##   9   75 109 134 127   9   4       0        0
-    ##   10   8  10  13  23 114 117       0        0
-    ##   11  44  59  64 110   2   0       0        0
-    ##   12   0   0   0   0 137 130       0        0
-    ##   13   1   0   1   2 103 122       0        0
-    ##   14   0   1   0   2  87 109       0        0
-    ##   15  37  38  51  64   1   2       0        0
-    ##   16   2   3   5   8  94  66       0        0
-    ##   17  27  19  35  47   3   2       0        0
-    ##   18   0   0   0   0  55  54       0        0
-    ##   19   2   4   6   4  25  29       0        0
-    ##   20   0   0   0   0  32  22       0        0
-    ##   21   1   1   3   0  16  18       0        0
-    ##   22   8   5  10   7   1   5       0        0
 
 ## Downsampling
 
@@ -824,54 +492,64 @@ for(i in 1:nrow(data.fineClusters.min)){
   }
 }
 
-table(object$sampleID,object$fineCluster)
+table(object$fineCluster,object$sampleID)
 ```
 
-    ##           
-    ##              0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16
-    ##   1        612 319 238  24 166 119 131   0   5  75   8  44   0   1   0  37   2
-    ##   2        721 376 267  23 160 140 156   1   2 109  10  59   0   0   1  38   3
-    ##   3        829 357 303  25 176 171 186   1   6 134  13  64   0   1   0  51   5
-    ##   4        847 664 321  32 270 271 185   2   6 127  23 110   0   2   2  64   8
-    ##   5         55   4  33 412   3   3  11 307 325   9 114   2 137 103  87   1  94
-    ##   6         56   3  31 483   2   1   7 310 259   4 117   0 130 122 109   2  66
-    ##   Doublet    0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-    ##   Negative   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-    ##           
-    ##             17  18  19  20  21  22
-    ##   1         27   0   2   0   1   8
-    ##   2         19   0   4   0   1   5
-    ##   3         35   0   6   0   3  10
-    ##   4         47   0   4   0   0   7
-    ##   5          3  55  25  32  16   1
-    ##   6          2  54  29  22  18   5
-    ##   Doublet    0   0   0   0   0   0
-    ##   Negative   0   0   0   0   0   0
+    ##     
+    ##        1   2   3   4   5   6 Doublet Negative
+    ##   0  612 721 829 847  55  56       0        0
+    ##   1  319 376 357 664   4   3       0        0
+    ##   2  238 267 303 321  33  31       0        0
+    ##   3   24  23  25  32 412 483       0        0
+    ##   4  166 160 176 270   3   2       0        0
+    ##   5  119 140 171 271   3   1       0        0
+    ##   6  131 156 186 185  11   7       0        0
+    ##   7    0   1   1   2 307 310       0        0
+    ##   8    5   2   6   6 325 259       0        0
+    ##   9   75 109 134 127   9   4       0        0
+    ##   10   8  10  13  23 114 117       0        0
+    ##   11  44  59  64 110   2   0       0        0
+    ##   12   0   0   0   0 137 130       0        0
+    ##   13   1   0   1   2 103 122       0        0
+    ##   14   0   1   0   2  87 109       0        0
+    ##   15  37  38  51  64   1   2       0        0
+    ##   16   2   3   5   8  94  66       0        0
+    ##   17  27  19  35  47   3   2       0        0
+    ##   18   0   0   0   0  55  54       0        0
+    ##   19   2   4   6   4  25  29       0        0
+    ##   20   0   0   0   0  32  22       0        0
+    ##   21   1   1   3   0  16  18       0        0
+    ##   22   8   5  10   7   1   5       0        0
 
 ``` r
-table(object$sampleID[downsampled.index],object$fineCluster[downsampled.index])
+table(object$fineCluster[downsampled.index],object$sampleID[downsampled.index])
 ```
 
-    ##           
-    ##              0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16
-    ##   1        612 319 238  23 160 119 131   0   0  75   0  44   0   0   0  37   0
-    ##   2        612 319 238  23 160 119 131   0   0  75   0  44   0   0   0  37   0
-    ##   3        612 319 238  23 160 119 131   0   0  75   0  44   0   0   0  37   0
-    ##   4        612 319 238  23 160 119 131   0   0  75   0  44   0   0   0  37   0
-    ##   5         55   0  31 412   0   0   0 307 259   0 114   0 130 103  87   0  66
-    ##   6         55   0  31 412   0   0   0 307 259   0 114   0 130 103  87   0  66
-    ##   Doublet    0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-    ##   Negative   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0   0
-    ##           
-    ##             17  18  19  20  21  22
-    ##   1         19   0   0   0   0   0
-    ##   2         19   0   0   0   0   0
-    ##   3         19   0   0   0   0   0
-    ##   4         19   0   0   0   0   0
-    ##   5          0  54  25  22  16   0
-    ##   6          0  54  25  22  16   0
-    ##   Doublet    0   0   0   0   0   0
-    ##   Negative   0   0   0   0   0   0
+    ##     
+    ##        1   2   3   4   5   6 Doublet Negative
+    ##   0  612 612 612 612  55  55       0        0
+    ##   1  319 319 319 319   0   0       0        0
+    ##   2  238 238 238 238  31  31       0        0
+    ##   3   23  23  23  23 412 412       0        0
+    ##   4  160 160 160 160   0   0       0        0
+    ##   5  119 119 119 119   0   0       0        0
+    ##   6  131 131 131 131   0   0       0        0
+    ##   7    0   0   0   0 307 307       0        0
+    ##   8    0   0   0   0 259 259       0        0
+    ##   9   75  75  75  75   0   0       0        0
+    ##   10   0   0   0   0 114 114       0        0
+    ##   11  44  44  44  44   0   0       0        0
+    ##   12   0   0   0   0 130 130       0        0
+    ##   13   0   0   0   0 103 103       0        0
+    ##   14   0   0   0   0  87  87       0        0
+    ##   15  37  37  37  37   0   0       0        0
+    ##   16   0   0   0   0  66  66       0        0
+    ##   17  19  19  19  19   0   0       0        0
+    ##   18   0   0   0   0  54  54       0        0
+    ##   19   0   0   0   0  25  25       0        0
+    ##   20   0   0   0   0  22  22       0        0
+    ##   21   0   0   0   0  16  16       0        0
+    ##   22   0   0   0   0   0   0       0        0
 
 ``` r
 object.downsampled <- subset(object, cells=downsampled.index[sample(length(downsampled.index),length(downsampled.index))])
@@ -895,36 +573,127 @@ DimPlot(object.downsampled, split.by="sampleID", reduction="tsne", label=TRUE , 
 
 ![](Demux_Preprocess_Downsample_files/figure-gfm/downsample-1.png)<!-- -->
 
-## Find “ADT expressing cluster” for each tissue
+## Determine gating values for each marker
+
+While DSB normalization should center negative populations around 0,
+their variance makes it necessary to make small adjustments per marker
+to split between negative and positive cells. This done by visual
+inspection.
 
 ``` r
-abpanel <- data.frame(readxl::read_excel("data/Supplementary_Table_1.xlsx"))
+abpanel <- data.frame(readxl::read_excel(data.abpanel))
 rownames(abpanel) <- abpanel$Marker
+abpanel$marker <- abpanel$Marker
+abpanel$DSB.cutoff <- 7
 
-ADT.matrix <- data.frame(GetAssayData(object.downsampled[,object.downsampled$volume == "50µl"], assay="ADT.kallisto", slot="counts"))
-ADT.matrix <- ADT.matrix %>% mutate(marker=rownames(ADT.matrix)) %>% pivot_longer(c(-marker))
-cell.annotation <- FetchData(object, vars=c("dilution", "tissue", "fineCluster"))
+## Setting gating thresholds based on DSB normalized values by visual inspection
+abpanel[c("EpCAM"),"DSB.cutoff"] <- 15
+abpanel[c("CD2","CD31"),"DSB.cutoff"] <- 12
+abpanel[c("CD26","CD3","CD39","CD11b"),"DSB.cutoff"] <- 8
+abpanel[c("CD127","CD1a","CD223","CD25","CD62L"),"DSB.cutoff"] <- 6
+abpanel[c("CD24","CD30","TCRab","CD70"),"DSB.cutoff"] <- 5.5
+abpanel[c("CD134","CD138","CD152","CD194","IgG1","IgG2A","CD28","CD80"),"DSB.cutoff"] <- 5
+abpanel[c("CD366"),"DSB.cutoff"] <- 4.5
+abpanel[c("TCRgd","CD183","CD197"),"DSB.cutoff"] <- 4
+abpanel[c("CD86","CD279"),"DSB.cutoff"] <- 3.5
+abpanel[c("TCRgd"),"DSB.cutoff"] <- 3
 
-## nth function extracts the value at a set fractile or median if fractile "rank" is less than a set "nth" threshhold
-nth <- function(value, nth=10, fractile=0.9){
-  if(length(value)*(1-fractile) <= nth){
-    newvalue <- median(value)
-  } else {
-    newvalue <- quantile(value, probs=c(fractile))
-  }
-  return(newvalue)
-}
+data.ADT.DSB <- GetAssayData(object.downsampled, assay="ADT.kallisto", slot="data")
+data.meta <- FetchData(object.downsampled, vars=c("fineCluster","supercluster","dilution","tissue"))
 
-ADT.matrix.agg <- ADT.matrix %>% group_by(tissue=cell.annotation[name,"tissue"], fineCluster=cell.annotation[name,"fineCluster"], marker) %>% summarise(nCells=length(value), UMIsum=sum(value), nth=nth(value), median=median(value), f90=quantile(value,probs=0.9))
+data.ADT.DSB.pivot <- as.data.frame(data.ADT.DSB) %>% 
+                          mutate(marker=rownames(.)) %>% 
+                          pivot_longer(-marker) %>% 
+                          filter(data.meta[name,"dilution"]=="DF1")
 
-Cluster.max <- ADT.matrix.agg %>% group_by(marker, tissue) %>% summarize(fineCluster=fineCluster[which.max(nth)])
+## Calculate percent positive (within each supercluster)
+data.ADT.DSB.pivot.positive.bySupercluster <- data.ADT.DSB.pivot %>% group_by(tissue=data.meta[name,"tissue"], supercluster=data.meta[name,"supercluster"], marker) %>% summarize(positive=sum(value >= abpanel[marker,"DSB.cutoff"]), count=length(name)) %>% mutate(pct=round(positive/count*100,2))
 
-ADT.matrix.aggByClusterMax <- Cluster.max %>% left_join(ADT.matrix.agg)
+## Calculate percent positive (within each tissue and supercluster)
+data.ADT.DSB.pivot.positive.byTissue <- data.ADT.DSB.pivot %>% group_by(tissue=data.meta[name,"tissue"], marker) %>% summarize(positive=sum(value >= abpanel[marker,"DSB.cutoff"]), count=length(name)) %>% mutate(pct=round(positive/count*100,2))
+
+## Remove negative "outliers" from the visualization as it drastically skews the axes making it hard to interpret the plots.
+data.ADT.DSB.pivot.filtered <- data.ADT.DSB.pivot %>% filter(value >= -5)
 ```
 
-    ## Joining, by = c("marker", "tissue", "fineCluster")
+Plot the gating values and ADT distribution within major cell types
 
 ``` r
+p.ADT.histograms <- ggplot(data.ADT.DSB.pivot.filtered, aes(y=data.meta[name,"supercluster"], fill=data.meta[name,"supercluster"], x=value, linetype=data.meta[name,"tissue"], color=data.meta[name,"tissue"])) + 
+  ggridges::geom_density_ridges(alpha=0.5, show.legend=FALSE) + 
+  ## A bit of a hack to get the "right" legend symbols
+  geom_point(alpha=0, aes(color=NA, linetype=NA)) + 
+  geom_line(alpha=0, aes(fill=NA)) + 
+  geom_vline(data=abpanel,aes(xintercept=DSB.cutoff)) + 
+  geom_text(data=data.ADT.DSB.pivot.positive.bySupercluster, 
+            aes(x=Inf, y=as.integer(supercluster)+(3.3-as.integer(tissue))*0.40, color=tissue, fill=NA, linetype=NA, label=paste0(round(pct,1),"%")), hjust=1, vjust=1, size=2, show.legend=FALSE) + 
+  #geom_point(data=data.ADT.DSB.pivot.positive.bySupercluster, 
+            #aes(x=1, y=1, fill=supercluster, color="black", linetype=21, alpha=0)) + 
+  facet_wrap(~marker, scales="free_x", ncol=6) + 
+  scale_fill_manual(values=color.supercluster) + 
+  scale_color_manual(values=sapply(color.tissue,function(x)alpha(x,0.5))) + 
+  scale_linetype_manual(values=c("Lung"="dashed","PBMC"="solid")) + 
+  scale_y_discrete(expand = c(0,0,0.65,0)) + 
+  labs(fill="Cell type", linetype="Tissue", color="Tissue") +
+  guides(fill=guide_legend(ncol=2, override.aes=list(alpha=1, pch=21, size=3), reverse=TRUE),
+         color=guide_legend(override.aes=list(linetype=c("solid","dashed"), pch=NA, alpha=1, size=0.75),
+                            keywidth=unit(8,"mm"), reverse=TRUE), 
+         linetype=FALSE) + 
+  theme(legend.position=c(1,0), 
+        legend.justification=c(1,0),
+        legend.direction="horizontal",
+        legend.key.size=unit(3,"mm"),
+        strip.text=element_text(vjust=-1),
+        panel.spacing.y=unit(0,"lines"),
+        axis.title=element_blank())
+
+
+png(file=file.path(outdir,"Supplementary Figure S1.png"), width=figure.width.full, height=10, units = figure.unit, res=figure.resolution, antialias=figure.antialias)
+
+  p.ADT.histograms
+
+dev.off()
+```
+
+    ## png 
+    ##   2
+
+``` r
+p.ADT.histograms
+```
+
+![](Demux_Preprocess_Downsample_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
+
+## Find “ADT expressing cluster” for each tissue
+
+We have tried different approaches. But the one that came closest to
+manual inspecition was using the cluster that had the highest value at
+the 90th percentile. To make it less sensitive to outliers within very
+small clusters, we use the median value if the 90th percentile “rank” is
+less than 10 threshhold. This effectively makes sure that the value used
+for expression cannot be from within the top 1-3 cells within a cluster.
+
+``` r
+## Get data from DF1 samples stained in 50µl (as this is likely to have highest signal)
+ADT.matrix <- data.frame(GetAssayData(object.downsampled[,object.downsampled$volume == "50µl"], assay="ADT.kallisto", slot="counts"))
+ADT.matrix <- ADT.matrix %>% mutate(marker=rownames(ADT.matrix)) %>% pivot_longer(c(-marker))
+
+## Get annotation
+cell.annotation <- FetchData(object.downsampled, vars=c("tissue", "fineCluster", "dilution"))
+
+## Calculate summary statistics for each fineCluster
+ADT.matrix.agg <- ADT.matrix %>% group_by(tissue=cell.annotation[name,"tissue"], fineCluster=cell.annotation[name,"fineCluster"], marker) %>% summarise(nCells=length(value), UMIsum=sum(value), nth=nth(value), median=median(value), f90=quantile(value,probs=0.9))
+
+marker.sum <- ADT.matrix %>% group_by(tissue=cell.annotation[name,"tissue"], dilution=cell.annotation[name,"dilution"], marker) %>% summarise(UMItotal=sum(value)) %>% filter(dilution=="DF1")
+
+## Remove dilution factor column (necessary for joining)
+marker.sum <- marker.sum[,-2]
+
+## Determine which cluster has "highest expression" based on the highest nth value
+Cluster.max <- ADT.matrix.agg %>% group_by(marker, tissue) %>% summarize(fineCluster=fineCluster[which.max(nth)])
+
+ADT.matrix.aggByClusterMax <- Cluster.max %>% left_join(ADT.matrix.agg) %>% left_join(marker.sum) %>% left_join(abpanel, by=c("marker"="Marker")) %>% left_join(data.ADT.DSB.pivot.positive.byTissue)
+
 write.table(ADT.matrix.aggByClusterMax,"data/markerByClusterStats.tsv")
 ```
 

@@ -1,3 +1,5 @@
+require("ggplot2")
+
 text.size <- 7
 text.axis.size <- 6
 panel.label_size <- 10
@@ -28,3 +30,7 @@ update_geom_defaults("density", list(size=0.25))
 update_geom_defaults("vline", list(size=0.25))
 update_geom_defaults("hline", list(size=0.25))
 update_geom_defaults("point", list(size=1))
+
+library("ggalluvial")
+update_geom_defaults("stratum", list(size=0.25))
+update_geom_defaults("flow", list(size=0.25))
