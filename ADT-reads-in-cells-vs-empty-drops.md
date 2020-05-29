@@ -155,19 +155,20 @@ data.ratio <- data.frame(ratio=markerUMI.inCell.freq/markerUMI.inDrop.freq) %>% 
 data.ratio$Marker <- factor(data.ratio$Marker, levels=data.ratio$Marker)
 
 p.ratio <- ggplot(data.ratio, aes(x=Marker, y=log2(ratio))) + 
-  geom_bar(stat="identity", aes(fill=log2(ratio)>0), color="black", width=0.65) +
+  geom_bar(stat="identity", aes(fill=log2(ratio)>0), color="black", width=0.4) +
   geom_hline(yintercept=0) + 
   scale_fill_manual(values=c(`FALSE`="lightgrey",`TRUE`="black")) + 
   scale_x_discrete(expand=c(0, 0.5)) + 
   scale_y_continuous(expand=c(0,0.05,0,0.05)) + 
   coord_flip() + 
   facet_grid(rows="conc", scales="free_y", space="free_y") + 
-  labs(y="log2(freq. ratio)", fill="µg/mL") + 
+  labs(y="log2(Cells:Empty ratio)", fill="µg/mL") + 
   theme(panel.spacing=unit(0.5,"mm"),
         axis.line=element_line(), 
         axis.title.y=element_blank(), 
         strip.placement="outside", 
         strip.text=element_blank(), 
+        panel.border=element_rect(color="grey"),
         legend.position="none", 
         legend.justification=c(0,1),
         legend.direction="horizontal",
@@ -277,7 +278,7 @@ p.final <- cowplot::plot_grid(p.ratio + theme(plot.margin=unit(c(0.03,0,0,0),"np
                               p.barplot + theme(plot.margin=unit(c(0,0,0,-0.005),"npc"), axis.ticks.y=element_blank()), 
                               p.alluvial, 
                               nrow=1, 
-                              rel_widths=c(2,4,1.5), 
+                              rel_widths=c(1.7,4.3,1.5), 
                               align="h", 
                               axis="tb", 
                               labels=c("A", "B", "C"), 
