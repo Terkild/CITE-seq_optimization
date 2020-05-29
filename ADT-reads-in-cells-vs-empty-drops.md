@@ -15,6 +15,7 @@ functions
 
 ``` r
 set.seed(114)
+require("Seurat", quietly=T)
 require("tidyverse", quietly=T)
 library("Matrix", quietly=T)
 
@@ -24,9 +25,16 @@ source("R/ggplot_settings.R")
 ## Load helper functions
 source("R/Utilities.R")
 
+## Load color schemes
+source("R/color.R")
+
 outdir <- "figures"
 data.drive <- "F:/"
 data.abpanel <- "data/Supplementary_Table_1.xlsx"
+data.markerStats <- "data/markerByClusterStats.tsv"
+data.Seurat <- "data/5P-CITE-seq_Titration.rds"
+
+show_tsne_markers <- c("CD4", "CD19", "CD86", "CD279", "TCRgd")
 
 ## Make a custom function for formatting the concentration scale
 scaleFUNformat <- function(x) sprintf("%.2f", x)
@@ -155,6 +163,9 @@ data.ratio <- data.frame(ratio=markerUMI.inCell.freq/markerUMI.inDrop.freq) %>% 
 data.ratio$Marker <- factor(data.ratio$Marker, levels=data.ratio$Marker)
 
 p.ratio <- ggplot(data.ratio, aes(x=Marker, y=log2(ratio))) + 
+  geom_rect(aes(xmin=-Inf,xmax=Inf,ymin=-1,ymax=-1.25,fill=conc), col="black") + 
+  scale_fill_viridis_c(trans="log2", labels=scaleFUNformat, breaks=c(0.0375,0.15,0.625,2.5,10)) + 
+  ggnewscale::new_scale_fill() + 
   geom_bar(stat="identity", aes(fill=log2(ratio)>0), color="black", width=0.4) +
   geom_hline(yintercept=0) + 
   scale_fill_manual(values=c(`FALSE`="lightgrey",`TRUE`="black")) + 
@@ -162,13 +173,14 @@ p.ratio <- ggplot(data.ratio, aes(x=Marker, y=log2(ratio))) +
   scale_y_continuous(expand=c(0,0.05,0,0.05)) + 
   coord_flip() + 
   facet_grid(rows="conc", scales="free_y", space="free_y") + 
-  labs(y="log2(Cells:Empty ratio)", fill="µg/mL") + 
-  theme(panel.spacing=unit(0.5,"mm"),
+  labs(title="Cell:Empty ratio", y="log2(Cells:Empty ratio)", fill="µg/mL") + 
+  theme(plot.title=element_text(size=7, face="bold", hjust=0.5), 
+        panel.spacing=unit(0.5,"mm"),
         axis.line=element_line(), 
         axis.title.y=element_blank(), 
         strip.placement="outside", 
         strip.text=element_blank(), 
-        panel.border=element_rect(color="grey"),
+        panel.border=element_rect(color=alpha("black",0.25)),
         legend.position="none", 
         legend.justification=c(0,1),
         legend.direction="horizontal",
@@ -199,13 +211,14 @@ p.barplot <- ggplot(plotData, aes(x=marker, y=count/10^6)) +
   coord_flip() +
   facet_grid(rows="conc", scales="free_y", space="free_y") +
   guides(fill=guide_legend(reverse=TRUE)) + 
-  labs(y=bquote("UMI count ("~10^6~")"), fill="µg/mL") + 
-  theme(panel.border=element_blank(), 
+  labs(title="UMI counts", y=bquote("UMI count ("~10^6~")"), fill="µg/mL") + 
+  theme(plot.title=element_text(size=7, face="bold", hjust=0.5),
+        panel.border=element_blank(), 
         panel.grid.major.y=element_blank(), 
         panel.spacing=unit(0.5,"mm"),
         axis.line=element_line(), 
         axis.title.y=element_blank(),
-        axis.text.y=element_blank(), 
+        #axis.text.y=element_blank(), 
         strip.placement="outside", 
         strip.text=element_blank(), 
         legend.position=c(1,1), 
@@ -259,32 +272,245 @@ plotData$cummulativeFreq[plotData$subset=="Cell"] <- cumsum(plotData$freq[plotDa
 p.alluvial <- ggplot(plotData, aes(y=freq, x=subset, fill=conc, stratum = marker.conc, alluvium = marker.conc)) + 
   ggalluvial::geom_flow(width = 1/2, color=alpha("black",0.25), alpha=0.75) + 
   ggalluvial::geom_stratum(width = 1/2) +
-  geom_text(aes(y=cummulativeFreq-(freq/2),label=label), na.rm=TRUE, vjust=0.5, hjust=0.5,  angle=0, size=1.5, fontface="bold") + 
+  geom_text(aes(y=cummulativeFreq-(freq/2),label=label), na.rm=TRUE, vjust=0.5, hjust=0.5,  angle=30, size=1.5, fontface="bold") + 
   scale_fill_viridis_c(trans="log2", labels=scaleFUNformat, breaks=c(0.0375,0.15,0.625,2.5,10)) + 
   scale_y_continuous(expand=c(0,0)) + 
   scale_x_discrete(expand=c(0,0), limits=rev(levels(plotData$subset))) + 
-  labs(y="UMI frequency", fill="DF1 µg/mL") + 
-  theme(legend.position="none", axis.title.x=element_blank(), panel.grid=element_blank())
+  labs(title="Frequency", y="UMI frequency", fill="DF1 µg/mL") + 
+  theme(plot.title=element_text(size=7, face="bold", hjust=0.5),
+        legend.position="none", 
+        axis.title.x=element_blank(), 
+        panel.grid=element_blank())
 
 p.alluvial
 ```
 
 ![](ADT-reads-in-cells-vs-empty-drops_files/figure-gfm/alluvial-1.png)<!-- -->
 
+# Specific signals despite background
+
+Despite high background (as assayed by high number of reads in empty
+droplets), most markers provide specific signal. However, the number of
+UMIs neede to achieve this signal is much lower in the markers with high
+signal-to-noise.
+
+``` r
+object <- readRDS(file=data.Seurat)
+
+## Show number of cells from each sample
+table(object$group)
+```
+
+    ## 
+    ## PBMC_50ul_1_1000k PBMC_50ul_4_1000k PBMC_25ul_4_1000k  PBMC_25ul_4_200k 
+    ##              1777              1777              1777              1777 
+    ##  Lung_50ul_1_500k  Lung_50ul_4_500k           Doublet          Negative 
+    ##              1681              1681                 0                 0
+
+``` r
+object <- subset(object, subset=volume == "50µl" & dilution == "DF1")
+object
+```
+
+    ## An object of class Seurat 
+    ## 33572 features across 3458 samples within 3 assays 
+    ## Active assay: RNA.kallisto (33514 features)
+    ##  2 other assays present: HTO.kallisto, ADT.kallisto
+    ##  3 dimensional reductions calculated: pca, tsne, umap
+
+``` r
+DefaultAssay(object) <- "ADT.kallisto"
+```
+
+## Show “positive” cutoff according to concentration
+
+Another way to show this is to show the number of UMIs required to get
+above the background threshold (defined in Supplementary Figure S1)
+
+``` r
+markerStats <- read.table(data.markerStats)
+rownames(markerStats) <- paste(markerStats$marker,markerStats$tissue,sep="_")
+
+## Determine which tissue has highest percentage positive cells and use this to set cutoff.
+markerStats.max <- markerStats %>% group_by(marker) %>% filter(pct==max(pct))
+
+data.UMI <- GetAssayData(object, assay="ADT.kallisto", slot="counts")
+data.meta <- FetchData(object, vars=c("tissue"))
+
+marker.data <- as.data.frame(data.UMI) %>% 
+  mutate(marker=rownames(.)) %>% 
+  pivot_longer(-marker) %>% 
+  group_by(marker, tissue=data.meta[name,"tissue"]) %>% 
+  summarize(pos.cutoff=quantile(value, probs=(1-min(0.95,(markerStats[paste(marker[1],tissue[1],sep="_"),"pct"]+20)/100)))) %>% left_join(markerStats)
+
+marker.data$marker <- factor(as.character(marker.data$marker), levels=levels(data.ratio$Marker))
+
+p.UMIcutoff <- ggplot(marker.data, aes(x=marker, y=pos.cutoff, group=tissue, fill=tissue)) + 
+  geom_bar(position="dodge", stat="identity", color="black", width=0.65) + 
+  scale_fill_manual(values=color.tissue) + 
+  scale_x_discrete(expand=c(0, 0.5)) + 
+  scale_y_continuous(expand=c(0,0.05,0,0.05)) + 
+  coord_flip() + 
+  facet_grid(rows="conc_µg_per_mL", scales="free_y", space="free_y") + 
+  labs(title="UMI cutoff", y="Above-background cutoff (UMI)", fill="Tissue") + 
+  theme(plot.title=element_text(size=7, face="bold", hjust=0.5), 
+        panel.border=element_blank(), 
+        panel.grid.major.y=element_blank(), 
+        panel.spacing=unit(0.5,"mm"),
+        axis.line=element_line(), 
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(), 
+        strip.placement="outside", 
+        strip.text=element_blank(), 
+        legend.position=c(1,1), 
+        legend.justification=c(1,1),
+        legend.text.align=0, 
+        legend.key.width=unit(0.3,"cm"), 
+        legend.key.height=unit(0.4,"cm"), 
+        legend.text=element_text(size=unit(5,"pt")))
+
+p.UMIcutoff
+```
+
+![](ADT-reads-in-cells-vs-empty-drops_files/figure-gfm/unnamed-chunk-2-1.png)<!-- -->
+
+Make tSNE plots with raw UMI counts. Use rainbow color scheme to show
+dynamic range in expression levels.
+
+``` r
+f.tsne.format <- function(x){
+    x + 
+    scale_color_gradientn(colours = c("#000033","#3333FF","#3377FF","#33AAFF","#33CC33","orange","red"), 
+                          limits=c(0,NA)) + 
+    scale_y_continuous(expand=c(0.15,0,0.05,0)) + 
+    theme_get() + 
+    theme(plot.title=element_text(size=7, face="bold", hjust=0.5),
+          plot.background=element_blank(),
+          panel.background=element_blank(),
+          axis.title=element_blank(),
+          axis.text.x=element_blank(),
+          axis.text.y=element_blank(),
+          legend.key.width=unit(3,"mm"),
+          legend.key.height=unit(2,"mm"),
+          legend.position=c(1,-0.03),
+          legend.justification=c(1,0),
+          legend.background=element_blank(),
+          legend.direction="horizontal")
+}
+
+p.tsne <- lapply(FeaturePlot(object, reduction="tsne", sort=TRUE,  combine=FALSE,  
+                           features=show_tsne_markers, 
+                           slot="counts", 
+                           max.cutoff='q90', 
+                           pt.size=0.1),
+               FUN=f.tsne.format)
+
+## Get common y-axis label
+p.tsne[[1]] <- p.tsne[[1]] + theme(axis.title.y=element_text())
+# a bit of a hack to get a common x-axis label
+p.tsne[[3]] <- p.tsne[[3]] + theme(axis.title.x=element_text(hjust=0.5))
+
+p.UMI.tsne <- cowplot::plot_grid(plotlist=p.tsne, 
+                                 align="h", 
+                                 axis="tb", 
+                                 nrow=1, 
+                                 rel_widths=c(1.07,1,1,1,1),
+                                 labels=c("E","","F","","G"), 
+                                 label_size=panel.label_size, 
+                                 vjust=panel.label_vjust, 
+                                 hjust=panel.label_hjust)
+
+p.UMI.tsne
+```
+
+![](ADT-reads-in-cells-vs-empty-drops_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+
+Make similar plots for all markers
+
+``` r
+markers <- sort(rownames(object[["ADT.kallisto"]])) 
+
+p.tsne.all <- lapply(FeaturePlot(object, reduction="tsne", sort=TRUE,  combine=FALSE,  
+                           features=markers, 
+                           slot="counts", 
+                           max.cutoff='q90', 
+                           pt.size=0.1),
+               FUN=f.tsne.format)
+
+names(p.tsne.all) <- markers
+
+p.tsne.all <- lapply(markers, function(x) p.tsne.all[[x]] + ggtitle(paste0(x," (",markerStats[paste0(x,"_PBMC"),"conc_µg_per_mL"]," µg/mL)")))
+
+plot.columns <- 5
+plot.num <- length(p.tsne.all)
+plot.rows <- ceiling(plot.num/plot.columns)
+plot.rowSplit <- 6
+
+## Reduce margins
+p.tsne.all <- lapply(p.tsne.all, function(x) x + 
+                       theme(plot.margin=unit(c(0.1,0.1,0.3,0.1),"mm")))
+
+## Get common y-axis label
+p.tsne.all[(c(0:(plot.rows-1))*plot.columns+1)] <- lapply(p.tsne.all[(c(0:(plot.rows-1))*plot.columns+1)], function(x) x + theme(axis.title.y=element_text()))
+
+## Show axis label for the center plot of the last row
+p.tsne.all[[(plot.columns*plot.rowSplit-floor(plot.columns/2))]] <- p.tsne.all[[(plot.columns*plot.rowSplit-floor(plot.columns/2))]] + theme(axis.title.x=element_text(hjust=0.5))
+# a bit of a hack to get a common x-axis label on the last row (hardcoded)
+p.tsne.all[[52]] <- p.tsne.all[[52]] + theme(axis.title.x=element_text(hjust=2))
+
+p.UMI.tsne.all.1 <- cowplot::plot_grid(plotlist=p.tsne.all[1:(plot.rowSplit*plot.columns)], align="h", axis="tb", ncol=plot.columns, rel_widths=c(1.1,1,1,1,1))
+p.UMI.tsne.all.2 <- cowplot::plot_grid(plotlist=p.tsne.all[(plot.rowSplit*plot.columns+1):52], align="h", axis="tb", ncol=plot.columns, rel_widths=c(1.1,1,1,1,1))
+
+png(file=file.path(outdir,paste0("Supplementary Figure S7A.png")), 
+      units=figure.unit, 
+      res=figure.resolution, 
+      width=figure.width.full, 
+      height=(figure.width.full/plot.columns*plot.rowSplit)*1.1,
+      antialias=figure.antialias)
+
+  p.UMI.tsne.all.1
+  
+dev.off()
+```
+
+    ## png 
+    ##   2
+
+``` r
+png(file=file.path(outdir,paste0("Supplementary Figure S7B.png")), 
+      units=figure.unit, 
+      res=figure.resolution, 
+      width=figure.width.full, 
+      height=(figure.width.full/plot.columns*(plot.rows-plot.rowSplit))*1.1,
+      antialias=figure.antialias)
+
+  p.UMI.tsne.all.2
+  
+dev.off()
+```
+
+    ## png 
+    ##   2
+
 ## Combine figure
 
 ``` r
-p.final <- cowplot::plot_grid(p.ratio + theme(plot.margin=unit(c(0.03,0,0,0),"npc")), 
-                              p.barplot + theme(plot.margin=unit(c(0,0,0,-0.005),"npc"), axis.ticks.y=element_blank()), 
+p.row1 <- cowplot::plot_grid(p.barplot + theme(plot.margin=unit(c(0.02,0,0,0),"npc")), 
                               p.alluvial, 
+                              p.ratio + theme(plot.margin=unit(c(0,0,0,0.05),"npc")), 
+                              p.UMIcutoff + theme(plot.margin=unit(c(0,0,0,-0.007),"npc")), 
                               nrow=1, 
-                              rel_widths=c(1.7,4.3,1.5), 
+                              rel_widths=c(1.75,0.75,1.2,1.3), 
                               align="h", 
                               axis="tb", 
-                              labels=c("A", "B", "C"), 
+                              labels=c("A", "B", "C", "D"), 
                               label_size=panel.label_size, 
                               vjust=panel.label_vjust, 
                               hjust=panel.label_hjust)
+
+p.final <- cowplot::plot_grid(p.row1, p.UMI.tsne, 
+                              ncol=1, 
+                              rel_heights=c(3,1.05))
 
 p.final
 ```
@@ -292,7 +518,7 @@ p.final
 ![](ADT-reads-in-cells-vs-empty-drops_files/figure-gfm/figure-1.png)<!-- -->
 
 ``` r
-png(file=file.path(outdir,"Figure 5.png"), width=figure.width.full, height=4.5, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
+png(file=file.path(outdir,"Figure 5.png"), width=figure.width.full, height=5.9, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
 p.final
 dev.off()
 ```

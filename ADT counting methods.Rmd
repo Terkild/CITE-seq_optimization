@@ -447,7 +447,7 @@ p.supp.figure <- cowplot::plot_grid(plotlist=plot.10X,
                                     hjust=panel.label_hjust)
 
 
-png(file=file.path(outdir,"Supplementary Figure S7.png"), 
+png(file=file.path(outdir,"Supplementary Figure S8.png"), 
     width=figure.width.full, 
     height=10.5, 
     units=figure.unit, 
