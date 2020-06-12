@@ -1,6 +1,8 @@
 # CITE-seq optimization
 Code and results from TotalSeqC antibody titration and pipeline benchmarking for CITE-seq experiments.
 
+Data and Seurat V3 objects from the study is deposited at FigShare under this DOI: [10.6084/m9.figshare.c.5018987](https://doi.org/10.6084/m9.figshare.c.5018987)
+
 This repository contains all the code used in the processing of the aligned data and data analysis (used for generating all figures) included in the manuscript:
 
 **Pre-processing:**
