@@ -157,7 +157,7 @@ p.barplot <- ggplot(plotData, aes(x=marker, y=count/10^6)) +
   coord_flip() +
   facet_grid(rows="conc", scales="free_y", space="free_y") +
   guides(fill=guide_legend(reverse=TRUE)) + 
-  labs(title="UMI counts", y=bquote("UMI count ("~10^6~")"), fill="µg/mL") + 
+  labs(title="UMI counts", y=bquote("UMI count ("~10^6~")"), fill="Compartment") + 
   theme(plot.title=element_text(size=7, face="bold", hjust=0.5),
         panel.border=element_blank(), 
         panel.grid.major.y=element_blank(), 
@@ -424,126 +424,6 @@ p.final <- cowplot::plot_grid(p.row1, p.UMI.tsne,
 p.final
 
 png(file=file.path(outdir,"Figure 5.png"), width=figure.width.full, height=5.9, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
-p.final
-dev.off()
-```
-
-
-
-# Data from Mule et al 2020.
-
-We also looked at ratio between UMI count frequency within cell-containing and empty droplets from the Mulé et al 2020 dataset (Available from Figshare: https://doi.org/10.1038/s41591-020-0769-8)
-
-As we do not have full dataset, the UMI counts are not meaningful, but the ratio within the cell-containing and empty droplets should still inform on the degree of background at different antibody concentrations.
-
-```{r DSB}
-
-data.DSB.path <- "/Data/DSBdata"
-data.cells <- file.path(data.drive,data.DSB.path,"H1_day0_demultilexed_singlets.RDS")
-data.empty <- file.path(data.drive,data.DSB.path,"neg_control_object.rds")
-data.conc <- file.path(data.drive,data.DSB.path,"Antibody_concentration.xlsx")
-
-```
-
-## Load and reformat the data 
-
-To make it more consistent with our setup, we will reformat the naming of markers.
-
-```{r DSBdata}
-abpanel <- data.frame(readxl::read_excel(data.conc))
-abpanel$Marker <- abpanel$Rename
-rownames(abpanel) <- abpanel$Marker
-
-cells <- readRDS(data.cells)
-empty <- readRDS(data.empty)
-
-ADT.cells <- cells@assay$CITE@raw.data
-ADT.empty <- empty@assay$CITE@raw.data
-
-renameRows <- function(names){
-  names <- gsub("_PROT","",names)
-  names <- gsub("Mouse IgG2bkIsotype","mIgG2b",names)	
-  names <- gsub("MouseIgG1kappaisotype","mIgG1",names)
-  names <- gsub("MouseIgG2akappaisotype","mIgG2a",names)
-  names <- gsub("RatIgG2bkIsotype","rIgG2b",names)
-  names <- gsub(" $","",names)
-}
-
-rownames(ADT.cells) <- renameRows(rownames(ADT.cells))
-rownames(ADT.empty) <- renameRows(rownames(ADT.empty))
-
-```
-
-## Calculate UMI frequency
-
-Within cell-containing and empty droplets
-
-```{r DSBfreq}
-ADT.cells.marker <- Matrix::rowSums(ADT.cells)
-ADT.cells.marker.freq <- ADT.cells.marker/sum(ADT.cells.marker)
-ADT.empty.marker <- Matrix::rowSums(ADT.empty)
-ADT.empty.marker.freq <- ADT.empty.marker/sum(ADT.empty.marker)
-
-ADT.cellToEmptyRatio <- ADT.cells.marker.freq/ADT.empty.marker.freq
-
-```
-
-## Make Ratio plot
-
-```{r plotRatioDSB, fig.height=6, fig.width=2.5}
-plotData <- data.frame(ratio=ADT.cellToEmptyRatio) %>% mutate(Marker=rownames(.), conc=abpanel[rownames(.),"conc"], subset=abpanel[rownames(.),"Most.positive.subset"]) %>% arrange(conc, ratio)
-
-plotData$Marker <- factor(plotData$Marker, levels=plotData$Marker)
-
-p.DSB.ratio <- ggplot(plotData, aes(x=Marker, y=log2(ratio))) + 
-  geom_bar(stat="identity", aes(fill=log2(ratio)>0), color="black", width=0.65) +
-  geom_hline(yintercept=0) + 
-  scale_fill_manual(values=c(`FALSE`="lightgrey",`TRUE`="black")) + 
-  ggnewscale::new_scale_fill() + 
-  geom_rect(aes(xmin=-Inf,xmax=Inf,ymin=-2.5,ymax=-2.85,fill=conc), col="black") + 
-  geom_text(data=plotData %>% group_by(conc) %>% summarize(length=n()) %>% mutate(subset="Cell"),aes(x=1,label=conc, y=-2.675), adj=0, vjust=0.5, size=2.5, angle=90) + 
-  scale_fill_viridis_c(trans="log2", labels=scaleFUNformat, breaks=c(0.0375,0.15,0.625,2.5,10), limits=c(0.013,10)) +
-  scale_x_discrete(expand=c(0, 0.5)) + 
-  scale_y_continuous(expand=c(0,0.05,0,0.05)) + 
-  coord_flip() + 
-  facet_grid(rows="conc", scales="free_y", space="free_y") + 
-  labs(y="log2(freq. ratio)", fill="µg/mL") + 
-  theme(panel.spacing=unit(0.5,"mm"),
-        axis.line=element_line(), 
-        axis.title.y=element_blank(), 
-        strip.placement="outside", 
-        strip.text=element_blank(), 
-        legend.position="none", 
-        legend.justification=c(0,1),
-        legend.direction="horizontal",
-        legend.text.align=0, 
-        legend.key.width=unit(0.3,"cm"), 
-        legend.key.height=unit(0.4,"cm"), 
-        legend.text=element_text(size=unit(5,"pt")))
-
-p.DSB.ratio + ggtitle("Mulé et al., 2020")
- 
-```
-
-## Combine figure with Mulé data
-
-```{r DSBfigure, fig.height=7, fig.width=figure.width.full}
-p.final <- cowplot::plot_grid(p.ratio + theme(plot.margin=unit(c(0.03,0,0,0),"npc")), 
-                              p.barplot + theme(plot.margin=unit(c(0,0,0,-0.005),"npc"), axis.ticks.y=element_blank()), 
-                              p.alluvial, 
-                              p.DSB.ratio + ggtitle("Data from Mulé et al., 2020"), 
-                              nrow=1, 
-                              rel_widths=c(2,3,1.5,3), 
-                              align="h", 
-                              axis="tb", 
-                              labels=c("A", "B", "C", "D"), 
-                              label_size=panel.label_size, 
-                              vjust=panel.label_vjust, 
-                              hjust=panel.label_hjust)
-
-p.final
-
-png(file=file.path(outdir,"Figure 5 wMule.png"), width=figure.width.full, height=6.6, units=figure.unit, res=figure.resolution, antialias=figure.antialias)
 p.final
 dev.off()
 ```
