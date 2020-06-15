@@ -284,7 +284,7 @@ p.methodCorrAdd <- lapply(p.methodCorr, function(x){
 })
 
 ## Combine into 
-D <- cowplot::plot_grid(plotlist=p.methodCorrAdd, align="hv", axis="tblr", ncol=2, label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust) 
+D <- cowplot::plot_grid(plotlist=p.methodCorrAdd, labels=c("D"), align="hv", axis="tblr", ncol=2, label_size=panel.label_size, vjust=panel.label_vjust, hjust=panel.label_hjust) 
 ```
 
 ## Make final plot

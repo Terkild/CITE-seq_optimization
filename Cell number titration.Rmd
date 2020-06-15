@@ -258,9 +258,62 @@ p.CD31 <- titrationPlot("CD31", legend=TRUE)
 p.CD31
 ```
 
+## tSNE plots
+
+Make tSNE plots with raw UMI counts. Use rainbow color scheme to show dynamic range in expression levels.
+
+```{r, fig.height=2, fig.width=7}
+show_tsne_markers <- c("CD31","CD44")
+f.tsne.format <- function(x){
+    x + 
+    scale_color_gradientn(colours = c("#000033","#3333FF","#3377FF","#33AAFF","#33CC33","orange","red"), 
+                          limits=c(0,NA)) + 
+    scale_y_continuous(expand=c(0,0,0.05,0), limits=c(-45.52796,37.94770)) + 
+    xlim(c(-40.83170,49.63832)) + 
+    theme_get() + 
+    theme(plot.title=element_text(size=7, face="bold", hjust=0.5),
+          plot.background=element_blank(),
+          panel.background=element_blank(),
+          axis.title=element_blank(),
+          axis.text.x=element_blank(),
+          axis.text.y=element_blank(),
+          legend.key.width=unit(3,"mm"),
+          legend.key.height=unit(2,"mm"),
+          legend.position=c(1,-0.03),
+          legend.justification=c(1,0),
+          legend.background=element_blank(),
+          legend.direction="horizontal")
+}
+
+maximum <- apply(FetchData(object, vars=paste0("adt_",show_tsne_markers), slot="counts"),2,quantile,probs=c(0.95))
+
+p.tsne.1 <- f.tsne.format(FeaturePlot(subset(object, subset=cellsAtStaining=="1000k"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[1]), slot="counts", max.cutoff=maximum[1], pt.size=0.1)[[1]])
+p.tsne.2 <- f.tsne.format(FeaturePlot(subset(object, subset=cellsAtStaining=="200k"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[1]), slot="counts", max.cutoff=maximum[1], pt.size=0.1)[[1]])
+p.tsne.3 <- f.tsne.format(FeaturePlot(subset(object, subset=cellsAtStaining=="1000k"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[2]), slot="counts", max.cutoff=maximum[2], pt.size=0.1)[[1]])
+p.tsne.4 <- f.tsne.format(FeaturePlot(subset(object, subset=cellsAtStaining=="200k"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[2]), slot="counts", max.cutoff=maximum[2], pt.size=0.1)[[1]])
+
+p.tsne <- list(p.tsne.1 + ggtitle("1000k"),p.tsne.2 + ggtitle("200k"),p.tsne.3 + ggtitle("1000k"),p.tsne.4 + ggtitle("200k"))
+## Get common y-axis label
+p.tsne[[1]] <- p.tsne[[1]] + theme(axis.title.y=element_text())
+# a bit of a hack to get a common x-axis label
+p.tsne[[2]] <- p.tsne[[2]] + theme(axis.title.x=element_text(hjust=1.2))
+
+p.UMI.tsne <- cowplot::plot_grid(plotlist=p.tsne, 
+                                 align="h", 
+                                 axis="tb", 
+                                 nrow=1, 
+                                 rel_widths=c(1.05,1,1,1),
+                                 labels=c("E",show_tsne_markers[1],"",show_tsne_markers[2]),
+                                 label_size=panel.label_size, 
+                                 vjust=panel.label_vjust, 
+                                 hjust=c(panel.label_hjust,0.5,panel.label_hjust,0.5))
+
+p.UMI.tsne
+```
+
 ## Final plot
 
-```{r figure, fig.width=7, fig.height=4.5}
+```{r figure, fig.width=7, fig.height=6}
 A <- p.UMIcountsPerCondition + theme(legend.key.width=unit(0.3,"cm"), 
                                      legend.key.height=unit(0.4,"cm"), 
                                      legend.text=element_text(size=unit(5,"pt")),
@@ -283,7 +336,7 @@ D <- p.CD31 + theme(plot.margin=unit(c(0.5,0,0,0),"cm"))
 
 AD <- cowplot::plot_grid(A,D,NULL, 
                          ncol=1, 
-                         rel_heights = c(13,17,1.5),
+                         rel_heights=c(13,17,1.5),
                          labels=c("A","D",""), 
                          label_size=panel.label_size, 
                          vjust=panel.label_vjust, 
@@ -299,16 +352,17 @@ BC <- cowplot::plot_grid(B1, B2, C,
                          vjust=panel.label_vjust, 
                          hjust=panel.label_hjust)
 
-p.figure <- cowplot::ggdraw(plot_grid(AD, BC, 
+p.figure <- cowplot::plot_grid(cowplot::ggdraw(plot_grid(AD, BC, 
                                       nrow=1, 
                                       rel_widths=c(1,4), 
                                       align="v", 
                                       axis="l")) + 
-    cowplot::draw_plot(BC.legend,0.27,0.020,0.2,0.00001)
+    cowplot::draw_plot(BC.legend,0.27,0.020,0.2,0.00001),
+    p.UMI.tsne, rel_heights=c(3,1.35), align="v", axis="lr", ncol=1)
 
 png(file=file.path(outdir,"Figure 4.png"), 
     width=figure.width.full, 
-    height=4.5, 
+    height=6, 
     units = figure.unit, 
     res=figure.resolution, 
     antialias=figure.antialias)

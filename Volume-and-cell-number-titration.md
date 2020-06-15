@@ -1,20 +1,14 @@
----
-title: "CITE-seq optimization - Staining volume titration"
-author: "Terkild Brink Buus"
-date: "30/3/2020"
-output: github_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(warning=FALSE, message=FALSE)
-options(stringsAsFactors=FALSE)
-```
+CITE-seq optimization - Staining volume and cell number titration
+================
+Terkild Brink Buus
+30/3/2020
 
 ## Load utilities
 
-Including libraries, plotting and color settings and custom utility functions
+Including libraries, plotting and color settings and custom utility
+functions
 
-```{r loadLibraries, results='hide', message=FALSE, warning=FALSE}
+``` r
 set.seed(114)
 require("Seurat", quietly=T)
 require("tidyverse", quietly=T)
@@ -46,23 +40,46 @@ scaleFUNformat <- function(x) sprintf("%.2f", x)
 
 ## Load Seurat object
 
-Subset to only focus on conditions with 1 mio cells and dilution factor 4 (thus comparing 50µl to 25µl staining volume in PBMCs).
+Subset to only focus on conditions with 200k or 1 mio cells and dilution
+factor 4 (thus comparing 50µl to 25µl staining volume with 1 mio or 200k
+PBMCs at staining).
 
-```{r loadSeurat}
+``` r
 object <- readRDS(file=data.Seurat)
 
 ## Show number of cells from each sample
 table(object$group)
+```
 
-object <- subset(object, subset=dilution == "DF4" & cellsAtStaining == "1000k")
+    ## 
+    ## PBMC_50ul_1_1000k PBMC_50ul_4_1000k PBMC_25ul_4_1000k  PBMC_25ul_4_200k 
+    ##              1777              1777              1777              1777 
+    ##  Lung_50ul_1_500k  Lung_50ul_4_500k           Doublet          Negative 
+    ##              1681              1681                 0                 0
+
+``` r
+object <- subset(object, subset=dilution == "DF4" & cellsAtStaining %in% c("200k","1000k"))
 object
+```
+
+    ## An object of class Seurat 
+    ## 33572 features across 5331 samples within 3 assays 
+    ## Active assay: RNA.kallisto (33514 features)
+    ##  2 other assays present: HTO.kallisto, ADT.kallisto
+    ##  3 dimensional reductions calculated: pca, tsne, umap
+
+``` r
+color.volnum <- c("50µl_1000k"="#0082c8","25µl_1000k"="#f58231","25µl_200k"="#911eb4")
+shape.volnum <- c("50µl_1000k"=21,"25µl_1000k"=22,"25µl_200k"=23)
+object$volnum <- factor(paste(object$volume,object$cellsAtStaining,sep="_"),levels=names(color.volnum))
 ```
 
 ## Load Ab panel annotation and concentrations
 
-Marker stats is reused in other comparisons and was calculated in the end of the preprocessing vignette.
+Marker stats is reused in other comparisons and was calculated in the
+end of the preprocessing vignette.
 
-```{r loadABPanel}
+``` r
 abpanel <- data.frame(readxl::read_excel(data.abpanel))
 rownames(abpanel) <- abpanel$Marker
 
@@ -78,15 +95,69 @@ rownames(markerStats) <- paste(markerStats$marker,markerStats$tissue,sep="_")
 marker.order <- markerStats.PBMC$marker[order(markerStats.PBMC$conc_µg_per_mL, markerStats.PBMC$UMItotal, decreasing=TRUE)]
 
 head(abpanel)
+```
+
+    ##        Marker Category     Alias   Clone Isotype_Mouse Corresponding_gene
+    ## CD103   CD103        B      <NA> BerACT8          IgG1              ITGAE
+    ## CD107a CD107a        B     LAMP1    H4A3          IgG1              LAMP1
+    ## CD117   CD117        E     C-kit   104D2          IgG1                KIT
+    ## CD11b   CD11b        B      <NA>  ICRF44          IgG1              ITGAM
+    ## CD123   CD123        E      <NA>     6H6          IgG1              IL3RA
+    ## CD127   CD127        E IL7Ralpha  A019D5          IgG1               IL7R
+    ##        TotalSeqC_Tag BioLegend_Cat Stock_conc_µg_per_mL conc_µg_per_mL
+    ## CD103           0145        350233                  500        0.31250
+    ## CD107a          0155        328649                  500        0.62500
+    ## CD117           0061        313243                  500        0.62500
+    ## CD11b           0161        301359                  500        0.15625
+    ## CD123           0064        306045                  500        0.12500
+    ## CD127           0390        351356                  500        0.31250
+    ##        dilution_1x
+    ## CD103          400
+    ## CD107a         200
+    ## CD117          200
+    ## CD11b          800
+    ## CD123         1000
+    ## CD127          400
+
+``` r
 head(markerStats)
 ```
+
+    ##             marker tissue fineCluster nCells UMIsum   nth median   f90 UMItotal
+    ## CD103_PBMC   CD103   PBMC           1    638   1740   5.0      2   5.0     5082
+    ## CD103_Lung   CD103   Lung          16    132   7084 187.0      5 187.0    60252
+    ## CD107a_PBMC CD107a   PBMC           1    638   7757  26.3      8  26.3    13396
+    ## CD107a_Lung CD107a   Lung          12    260  11674  99.2     15  99.2    23273
+    ## CD117_PBMC   CD117   PBMC           1    638   1318   4.0      2   4.0     3316
+    ## CD117_Lung   CD117   Lung          21     32   1695  41.0     41 130.4     5878
+    ##             Category Alias   Clone Isotype_Mouse Corresponding_gene
+    ## CD103_PBMC         B  <NA> BerACT8          IgG1              ITGAE
+    ## CD103_Lung         B  <NA> BerACT8          IgG1              ITGAE
+    ## CD107a_PBMC        B LAMP1    H4A3          IgG1              LAMP1
+    ## CD107a_Lung        B LAMP1    H4A3          IgG1              LAMP1
+    ## CD117_PBMC         E C-kit   104D2          IgG1                KIT
+    ## CD117_Lung         E C-kit   104D2          IgG1                KIT
+    ##             TotalSeqC_Tag BioLegend_Cat Stock_conc_µg_per_mL conc_µg_per_mL
+    ## CD103_PBMC            145        350233                  500           1.25
+    ## CD103_Lung            145        350233                  500           1.25
+    ## CD107a_PBMC           155        328649                  500           2.50
+    ## CD107a_Lung           155        328649                  500           2.50
+    ## CD117_PBMC             61        313243                  500           2.50
+    ## CD117_Lung             61        313243                  500           2.50
+    ##             dilution_1x marker.y DSB.cutoff positive count   pct
+    ## CD103_PBMC          400    CD103          7       14  1777  0.79
+    ## CD103_Lung          400    CD103          7      501  1681 29.80
+    ## CD107a_PBMC         200   CD107a          7      122  1777  6.87
+    ## CD107a_Lung         200   CD107a          7      150  1681  8.92
+    ## CD117_PBMC          200    CD117          7        3  1777  0.17
+    ## CD117_Lung          200    CD117          7       32  1681  1.90
 
 ## Cell type and tissue overview
 
 Make tSNE plots colored by cell type, cluster and tissue of origin.
 
-```{r tsnePlots, fig.height=3, fig.width=7}
-p.tsne.volume <- DimPlot(object, group.by="volume", reduction="tsne", pt.size=0.1, combine=FALSE)[[1]] + theme_get() + facet_wrap(~"Volume") + scale_color_manual(values=color.volume)
+``` r
+p.tsne.volume <- DimPlot(object, group.by="volnum", reduction="tsne", pt.size=0.1, combine=FALSE)[[1]] + theme_get() + facet_wrap(~"Volume") + scale_color_manual(values=color.volnum)
 
 p.tsne.cluster <- DimPlot(object, group.by="supercluster", reduction="tsne", pt.size=0.1, combine=FALSE)[[1]] + theme_get() + scale_color_manual(values=color.supercluster) + facet_wrap(~"Cell types")
 
@@ -95,11 +166,13 @@ p.tsne.finecluster <- DimPlot(object, label=TRUE, label.size=3, reduction="tsne"
 p.tsne.cluster + p.tsne.finecluster + p.tsne.volume
 ```
 
+![](Volume-and-cell-number-titration_files/figure-gfm/tsnePlots-1.png)<!-- -->
+
 ## Overall ADT counts
 
 Extract UMI data and calculate UMI sum per marker within each condition.
 
-```{r calculateUMIcountsPerMarker}
+``` r
 ## Get the data
 ADT.matrix <- data.frame(GetAssayData(object, assay="ADT.kallisto", slot="counts"))
 ADT.matrix$marker <- rownames(ADT.matrix)
@@ -107,10 +180,10 @@ ADT.matrix$conc <- abpanel[ADT.matrix$marker,"conc_µg_per_mL"]
 ADT.matrix <- ADT.matrix %>% pivot_longer(c(-marker,-conc))
 
 ## Get cell annotations
-cell.annotation <- FetchData(object, vars=c("volume"))
+cell.annotation <- FetchData(object, vars=c("volnum"))
 
 ## Calculate marker sum from each dilution within both tissues
-ADT.matrix.agg <- ADT.matrix %>% group_by(volume=cell.annotation[name,"volume"], marker, conc) %>% summarise(sum=sum(value))
+ADT.matrix.agg <- ADT.matrix %>% group_by(volume=cell.annotation[name,"volnum"], marker, conc) %>% summarise(sum=sum(value))
 
 ## Order markers by concentration
 ADT.matrix.agg$marker.byConc <- factor(ADT.matrix.agg$marker, levels=marker.order)
@@ -126,8 +199,7 @@ ADT.matrix.agg.total <- ADT.matrix.agg
 
 Samples stained with diluted Ab panel have reduced ADT counts.
 
-```{r UMIcountsPerCondition, fig.width=2.5, fig.height=2}
-
+``` r
 p.UMIcountsPerCondition <- ggplot(ADT.matrix.agg.total[order(-ADT.matrix.agg$conc, -ADT.matrix.agg$sum),], aes(x=volume, y=sum/10^6, fill=conc)) + 
   geom_bar(stat="identity", col=alpha(col="black",alpha=0.05)) + 
   scale_fill_viridis_c(trans="log2", labels=scaleFUNformat, breaks=c(0.0375,0.15,0.625,2.5,10)) + 
@@ -139,11 +211,15 @@ p.UMIcountsPerCondition <- ggplot(ADT.matrix.agg.total[order(-ADT.matrix.agg$con
 p.UMIcountsPerCondition
 ```
 
+![](Volume-and-cell-number-titration_files/figure-gfm/UMIcountsPerCondition-1.png)<!-- -->
+
 ## Compare total UMI counts per marker
 
-Plot total UMI counts for each marker at the investigated dilution factors (DF1 vs. DF4). To ease readability, we place dashed lines between each concentration.
+Plot total UMI counts for each marker at the investigated dilution
+factors (DF1 vs. DF4). To ease readability, we place dashed lines
+between each concentration.
 
-```{r plotUMIcountsPerMarker, fig.width=4.5, fig.height=5}
+``` r
 ## Calculate "breaks" where concentration change.
 lines <- length(marker.order)-cumsum(sapply(split(ann.markerConc$Marker,ann.markerConc$conc_µg_per_mL),length))+0.5
 lines <- data.frame(breaks=lines[-length(lines)])
@@ -159,27 +235,35 @@ p.markerByConc <- ggplot(ann.markerConc, aes(x=1, y=Marker, fill=conc_µg_per_mL
   
 ## Make UMI counts per Marker plot
 p.UMIcountsPerMarker <- ggplot(ADT.matrix.agg, aes(x=marker.byConc,y=log2(sum))) + 
-  geom_line(aes(group=marker), size=1.2, color="#666666") + 
-  geom_point(aes(group=volume, fill=volume), pch=21, size=0.7) + 
+  geom_line(aes(group=marker), size=1, color="#666666", alpha=0.5) + 
+  ggbeeswarm::geom_quasirandom(aes(group=volume, fill=volume, pch=volume), size=1, dodge.width=-0.75) + 
   geom_vline(data=lines,aes(xintercept=breaks), linetype="dashed", alpha=0.5) + 
-  scale_fill_manual(values=color.volume) + 
+  scale_fill_manual(values=color.volnum) + 
   scale_y_continuous(breaks=c(9:17)) + 
+  scale_shape_manual(values=shape.volnum) + 
   ylab("log2(UMI sum)") + 
-  guides(fill=guide_legend(override.aes=list(size=1.5), reverse=TRUE)) + 
+  guides(fill=guide_legend(override.aes=list(size=1.5), ncol=1, reverse=FALSE)) + 
   theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position="bottom", legend.justification="left", legend.title.align=0, legend.key.width=unit(0.2,"cm"), legend.title=element_blank()) + 
   coord_flip()
 
 ## Combine plot with markerByConc annotation heatmap
-plotUMIcountsPerMarker <- p.markerByConc + guides(fill=F) + p.UMIcountsPerMarker + guides(fill=F) + plot_spacer() + guide_area() + plot_layout(ncol=4, widths=c(1,30,0.1), guides='collect')
+plotUMIcountsPerMarker <- p.markerByConc + guides(fill=F) + p.UMIcountsPerMarker + guides(fill=F, shape=F) + plot_spacer() + guide_area() + plot_layout(ncol=4, widths=c(1,30,0.1), guides='collect')
 
 plotUMIcountsPerMarker
 ```
 
+![](Volume-and-cell-number-titration_files/figure-gfm/plotUMIcountsPerMarker-1.png)<!-- -->
+
 ## Compare change in UMI/cell within expressing cluster
 
-Using a specific percentile may be prone to outliers in small clusters (i.e. the 90th percentile of a cluster of 30 will be the #3 higest cell making it prone to outliers). We thus set a threshold of the value to only be the 90th percentile if cluster contains more than 100 cells. For smaller clusters, the median is used. Expressing cluster is identified in the "preprocessing" vignette.
+Using a specific percentile may be prone to outliers in small clusters
+(i.e. the 90th percentile of a cluster of 30 will be the \#3 higest cell
+making it prone to outliers). We thus set a threshold of the value to
+only be the 90th percentile if cluster contains more than 100 cells. For
+smaller clusters, the median is used. Expressing cluster is identified
+in the “preprocessing” vignette.
 
-```{r UMIinExpressingCells, fig.width=4.5, fig.height=5}
+``` r
 ## Get the data
 ADT.matrix <- data.frame(GetAssayData(object, assay="ADT.kallisto", slot="counts"))
 ADT.matrix$marker <- rownames(ADT.matrix)
@@ -187,12 +271,16 @@ ADT.matrix$conc <- abpanel[ADT.matrix$marker,"conc_µg_per_mL"]
 ADT.matrix <- ADT.matrix %>% pivot_longer(c(-marker,-conc))
 
 ## Get cell annotations
-cell.annotation <- FetchData(object, vars=c("volume", "fineCluster"))
+cell.annotation <- FetchData(object, vars=c("volnum", "fineCluster"))
 
 ## Calculate marker statistics from each dilution within each cluster
-ADT.matrix.agg <- ADT.matrix %>% group_by(volume=cell.annotation[name,"volume"], fineCluster=cell.annotation[name,"fineCluster"], marker, conc) %>% summarise(sum=sum(value), median=quantile(value, probs=c(0.9)), nth=nth(value))
+ADT.matrix.agg <- ADT.matrix %>% group_by(volume=cell.annotation[name,"volnum"], fineCluster=cell.annotation[name,"fineCluster"], marker, conc) %>% summarise(sum=sum(value), median=quantile(value, probs=c(0.9)), nth=nth(value))
 ADT.matrix.agg$tissue == "PBMC"
+```
 
+    ## logical(0)
+
+``` r
 ## Use data for the previously determined expressing cluster.
 Cluster.max <- markerStats[markerStats$tissue == "PBMC",c("marker","fineCluster")]
 Cluster.max$fineCluster <- factor(Cluster.max$fineCluster)
@@ -201,11 +289,12 @@ ADT.matrix.aggByClusterMax <- Cluster.max %>% left_join(ADT.matrix.agg)
 ADT.matrix.aggByClusterMax$marker.byConc <- factor(ADT.matrix.aggByClusterMax$marker, levels=marker.order)
 
 p.UMIinExpressingCells <- ggplot(ADT.matrix.aggByClusterMax, aes(x=marker.byConc, y=log2(nth))) + 
-  geom_line(aes(group=marker), size=1.2, color="#666666") + 
-  geom_point(aes(group=volume, fill=volume), pch=21, size=0.7) + 
+  geom_line(aes(group=marker), size=1, alpha=0.5, color="#666666") + 
+  ggbeeswarm::geom_quasirandom(aes(group=volume, fill=volume, pch=volume), size=1, show.legend=FALSE, dodge.width=-0.75) + 
   geom_vline(data=lines,aes(xintercept=breaks), linetype="dashed", alpha=0.5) + 
   geom_text(aes(label=paste0(fineCluster," ")), y=Inf, adj=1, size=1.5) + 
-  scale_fill_manual(values=color.volume) + 
+  scale_fill_manual(values=color.volnum) + 
+  scale_shape_manual(values=shape.volnum) + 
   scale_y_continuous(breaks=c(0:11), labels=2^c(0:11), expand=c(0.05,0.5)) + 
   ylab("90th percentile UMI of expressing cluster") + 
   theme(axis.title.y=element_blank(), axis.text.y=element_blank(), legend.position="right", legend.justification="left", legend.title.align=0, legend.key.width=unit(0.2,"cm")) + 
@@ -217,11 +306,15 @@ UMIinExpressingCells <- p.markerByConc + theme(legend.position="none") + p.UMIin
 UMIinExpressingCells
 ```
 
+![](Volume-and-cell-number-titration_files/figure-gfm/UMIinExpressingCells-1.png)<!-- -->
+
 ## Titration examples
 
-Most markers are largely unaffected by reducing staining volume. However, some antibodies used at low concentrations and targeting abundant epitopes are affected, an example of such is CD31:
+Most markers are largely unaffected by reducing staining volume.
+However, some antibodies used at low concentrations and targeting
+abundant epitopes are affected, an example of such is CD31:
 
-```{r fig.width=1.4, fig.height=2.3}
+``` r
 ## Make helper function for plotting titration plots
 titrationPlot <- function(marker, gate.PBMC=NULL, gate.Lung=NULL, y.axis=FALSE, show.gate=TRUE, legend=FALSE){
   curMarker.name <- marker
@@ -241,13 +334,13 @@ titrationPlot <- function(marker, gate.PBMC=NULL, gate.Lung=NULL, y.axis=FALSE, 
 
   p <- feature_rankplot_hist_custom(data=object, 
                                     marker=paste0("adt_",curMarker.name),      
-                                    group="volume",
+                                    group="volnum",
                                     barcodeGroup="supercluster",
                                     conc=curMarker.DF1conc, 
                                     legend=legend, 
                                     yaxis.text=y.axis, 
                                     gates=gate,
-                                    histogram.colors=color.volume, 
+                                    histogram.colors=color.volnum, 
                                     title=curMarker.name)
   
   return(p)
@@ -258,69 +351,18 @@ p.CD31 <- titrationPlot("CD31", legend=TRUE)
 p.CD31
 ```
 
-## tSNE plots
-
-Make tSNE plots with raw UMI counts. Use rainbow color scheme to show dynamic range in expression levels.
-
-```{r, fig.height=2, fig.width=7}
-show_tsne_markers <- c("CD31","CD8")
-f.tsne.format <- function(x){
-    x + 
-    scale_color_gradientn(colours = c("#000033","#3333FF","#3377FF","#33AAFF","#33CC33","orange","red"), 
-                          limits=c(0,NA)) + 
-    scale_y_continuous(expand=c(0,0,0.05,0), limits=c(-45.52796,37.94770)) + 
-    xlim(c(-40.83170,49.63832)) + 
-    theme_get() + 
-    theme(plot.title=element_text(size=7, face="bold", hjust=0.5),
-          plot.background=element_blank(),
-          panel.background=element_blank(),
-          axis.title=element_blank(),
-          axis.text.x=element_blank(),
-          axis.text.y=element_blank(),
-          legend.key.width=unit(3,"mm"),
-          legend.key.height=unit(2,"mm"),
-          legend.position=c(1,-0.03),
-          legend.justification=c(1,0),
-          legend.background=element_blank(),
-          legend.direction="horizontal")
-}
-
-maximum <- apply(FetchData(object, vars=paste0("adt_",show_tsne_markers), slot="counts"),2,quantile,probs=c(0.95))
-
-p.tsne.1 <- f.tsne.format(FeaturePlot(subset(object, subset=volume=="25µl"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[1]), slot="counts", max.cutoff=maximum[1], pt.size=0.1)[[1]])
-p.tsne.2 <- f.tsne.format(FeaturePlot(subset(object, subset=volume=="50µl"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[1]), slot="counts", max.cutoff=maximum[1], pt.size=0.1)[[1]])
-p.tsne.3 <- f.tsne.format(FeaturePlot(subset(object, subset=volume=="25µl"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[2]), slot="counts", max.cutoff=maximum[2], pt.size=0.1)[[1]])
-p.tsne.4 <- f.tsne.format(FeaturePlot(subset(object, subset=volume=="50µl"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[2]), slot="counts", max.cutoff=maximum[2], pt.size=0.1)[[1]])
-
-p.tsne <- list(p.tsne.1 + ggtitle("25µl"),p.tsne.2 + ggtitle("50µl"),p.tsne.3 + ggtitle("25µl"),p.tsne.4 + ggtitle("50µl"))
-## Get common y-axis label
-p.tsne[[1]] <- p.tsne[[1]] + theme(axis.title.y=element_text())
-# a bit of a hack to get a common x-axis label
-p.tsne[[2]] <- p.tsne[[2]] + theme(axis.title.x=element_text(hjust=1.2))
-
-p.UMI.tsne <- cowplot::plot_grid(plotlist=p.tsne, 
-                                 align="h", 
-                                 axis="tb", 
-                                 nrow=1, 
-                                 rel_widths=c(1.05,1,1,1),
-                                 labels=c("E",show_tsne_markers[1],"F",show_tsne_markers[2]),
-                                 label_size=panel.label_size, 
-                                 vjust=panel.label_vjust, 
-                                 hjust=c(panel.label_hjust,0.5,panel.label_hjust,0.5))
-
-p.UMI.tsne
-```
+![](Volume-and-cell-number-titration_files/figure-gfm/unnamed-chunk-1-1.png)<!-- -->
 
 ## Final plot
 
-```{r figure3, fig.width=7, fig.height=6}
+``` r
 A <- p.UMIcountsPerCondition + theme(legend.key.width=unit(0.3,"cm"), 
                                      legend.key.height=unit(0.4,"cm"), 
                                      legend.text=element_text(size=unit(5,"pt")),
-                                     plot.margin=unit(c(0.3,0,0.5,0),"cm"))
+                                     plot.margin=unit(c(0.3,0,0,0),"cm"))
 
 B1 <- p.markerByConc + theme(text = element_text(size=10), 
-                             plot.margin=unit(c(0.3,0,0,0),"cm"),
+                             plot.margin=unit(c(0.3,0,1,0),"cm"),
                              legend.position="none")
 B2 <- p.UMIcountsPerMarker + theme(legend.position="none")
 C <- p.UMIinExpressingCells + theme(legend.position="none")
@@ -329,13 +371,15 @@ BC.legend <- cowplot::get_legend(p.UMIcountsPerMarker +
                                    theme(legend.position="bottom", 
                                          legend.direction="horizontal", 
                                          legend.background=element_blank(), 
-                                         legend.box.background=element_blank(), legend.key=element_blank()))
+                                         legend.box.background=element_blank(), 
+                                         legend.key=element_blank(),
+                                         legend.key.height=unit(2,"mm")))
 
 D <- p.CD31 + theme(plot.margin=unit(c(0.5,0,0,0),"cm"))
 
 AD <- cowplot::plot_grid(A,D,NULL, 
                          ncol=1, 
-                         rel_heights = c(13,17,1.5),
+                         rel_heights = c(14,16,1.5),
                          labels=c("A","D",""), 
                          label_size=panel.label_size, 
                          vjust=panel.label_vjust, 
@@ -351,34 +395,35 @@ BC <- cowplot::plot_grid(B1, B2, C,
                          vjust=panel.label_vjust, 
                          hjust=panel.label_hjust)
 
-p.figure <- cowplot::plot_grid(cowplot::ggdraw(plot_grid(AD, BC, 
-                                      nrow=1, 
-                                      rel_widths=c(1,4), 
-                                      align="v", 
-                                      axis="l")) + 
-    cowplot::draw_plot(BC.legend,0.27,0.020,0.2,0.00001),
-    p.UMI.tsne, rel_heights=c(3,1.35), align="v", axis="lr", ncol=1)
+p.final <- cowplot::ggdraw(plot_grid(AD, BC, nrow=1, rel_widths=c(1.2,4), align="v", axis="l")) + 
+    cowplot::draw_plot(BC.legend,0.27,0.023,0.2,0.00001)
 
-
-png(file=file.path(outdir,"Figure 3.png"), 
+png(file=file.path(outdir,"Supplementary Figure S5.png"), 
     width=figure.width.full, 
-    height=6, 
+    height=4.7, 
     units = figure.unit, 
     res=figure.resolution, 
     antialias=figure.antialias)
 
-  p.figure
+  p.final
   
 dev.off()
-
-p.figure
 ```
+
+    ## png 
+    ##   2
+
+``` r
+p.final
+```
+
+![](Volume-and-cell-number-titration_files/figure-gfm/figure3-1.png)<!-- -->
 
 ## Individual titration plots
 
 For supplementary information.
 
-```{r suppFig1, fig.width=7, fig.height=10}
+``` r
 plots.columns = 6
 rows.max <- 5
 
@@ -422,7 +467,7 @@ for(i in 1:plots.pages){
   curPlots <- cowplot::plot_grid(plotlist=plots[curPlots],ncol=plots.columns, rel_widths=c(1.1,1,1,1,1,1), align="h", axis="tb")
   curPlots.layout <- cowplot::plot_grid(NULL, p.legend, curPlots, vjust=-0.5, hjust=panel.label_hjust, label_size=panel.label_size, ncol=1, rel_heights= c(0.5, 1.3, 70/5*plots.rows))
   
-  png(file=file.path(outdir,paste0("Supplementary Figure 3",LETTERS[i],".png")), 
+  png(file=file.path(outdir,paste0("Supplementary Figure X",LETTERS[i],".png")), 
       units=figure.unit, 
       res=figure.resolution, 
       width=figure.width.full, 

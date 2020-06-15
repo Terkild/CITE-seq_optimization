@@ -13,7 +13,6 @@ set.seed(114)
 require("Seurat", quietly=T)
 require("tidyverse", quietly=T)
 library("Matrix", quietly=T)
-library("DropletUtils", quietly=T)
 library("patchwork", quietly=T)
 
 ## Load ggplot theme and defaults
@@ -124,27 +123,27 @@ head(markerStats)
     ## CD107a_Lung CD107a   Lung          12    260  11674  99.2     15  99.2    23273
     ## CD117_PBMC   CD117   PBMC           1    638   1318   4.0      2   4.0     3316
     ## CD117_Lung   CD117   Lung          21     32   1695  41.0     41 130.4     5878
-    ##             Alias   Clone Isotype_Mouse Corresponding_gene TotalSeqC_Tag
-    ## CD103_PBMC   <NA> BerACT8          IgG1              ITGAE           145
-    ## CD103_Lung   <NA> BerACT8          IgG1              ITGAE           145
-    ## CD107a_PBMC LAMP1    H4A3          IgG1              LAMP1           155
-    ## CD107a_Lung LAMP1    H4A3          IgG1              LAMP1           155
-    ## CD117_PBMC  C-kit   104D2          IgG1                KIT            61
-    ## CD117_Lung  C-kit   104D2          IgG1                KIT            61
-    ##             BioLegend_Cat Stock_conc_µg_per_mL conc_µg_per_mL dilution_1x
-    ## CD103_PBMC         350233                  500           1.25         400
-    ## CD103_Lung         350233                  500           1.25         400
-    ## CD107a_PBMC        328649                  500           2.50         200
-    ## CD107a_Lung        328649                  500           2.50         200
-    ## CD117_PBMC         313243                  500           2.50         200
-    ## CD117_Lung         313243                  500           2.50         200
-    ##             marker.y DSB.cutoff positive count   pct
-    ## CD103_PBMC     CD103          7       14  1777  0.79
-    ## CD103_Lung     CD103          7      501  1681 29.80
-    ## CD107a_PBMC   CD107a          7      122  1777  6.87
-    ## CD107a_Lung   CD107a          7      150  1681  8.92
-    ## CD117_PBMC     CD117          7        3  1777  0.17
-    ## CD117_Lung     CD117          7       32  1681  1.90
+    ##             Category Alias   Clone Isotype_Mouse Corresponding_gene
+    ## CD103_PBMC         B  <NA> BerACT8          IgG1              ITGAE
+    ## CD103_Lung         B  <NA> BerACT8          IgG1              ITGAE
+    ## CD107a_PBMC        B LAMP1    H4A3          IgG1              LAMP1
+    ## CD107a_Lung        B LAMP1    H4A3          IgG1              LAMP1
+    ## CD117_PBMC         E C-kit   104D2          IgG1                KIT
+    ## CD117_Lung         E C-kit   104D2          IgG1                KIT
+    ##             TotalSeqC_Tag BioLegend_Cat Stock_conc_µg_per_mL conc_µg_per_mL
+    ## CD103_PBMC            145        350233                  500           1.25
+    ## CD103_Lung            145        350233                  500           1.25
+    ## CD107a_PBMC           155        328649                  500           2.50
+    ## CD107a_Lung           155        328649                  500           2.50
+    ## CD117_PBMC             61        313243                  500           2.50
+    ## CD117_Lung             61        313243                  500           2.50
+    ##             dilution_1x marker.y DSB.cutoff positive count   pct
+    ## CD103_PBMC          400    CD103          7       14  1777  0.79
+    ## CD103_Lung          400    CD103          7      501  1681 29.80
+    ## CD107a_PBMC         200   CD107a          7      122  1777  6.87
+    ## CD107a_Lung         200   CD107a          7      150  1681  8.92
+    ## CD117_PBMC          200    CD117          7        3  1777  0.17
+    ## CD117_Lung          200    CD117          7       32  1681  1.90
 
 ## Cell type and tissue overview
 
@@ -345,6 +344,62 @@ p.CD31
 
 ![](Volume-titration_files/figure-gfm/unnamed-chunk-1-1.png)<!-- -->
 
+## tSNE plots
+
+Make tSNE plots with raw UMI counts. Use rainbow color scheme to show
+dynamic range in expression levels.
+
+``` r
+show_tsne_markers <- c("CD31","CD8")
+f.tsne.format <- function(x){
+    x + 
+    scale_color_gradientn(colours = c("#000033","#3333FF","#3377FF","#33AAFF","#33CC33","orange","red"), 
+                          limits=c(0,NA)) + 
+    scale_y_continuous(expand=c(0,0,0.05,0), limits=c(-45.52796,37.94770)) + 
+    xlim(c(-40.83170,49.63832)) + 
+    theme_get() + 
+    theme(plot.title=element_text(size=7, face="bold", hjust=0.5),
+          plot.background=element_blank(),
+          panel.background=element_blank(),
+          axis.title=element_blank(),
+          axis.text.x=element_blank(),
+          axis.text.y=element_blank(),
+          legend.key.width=unit(3,"mm"),
+          legend.key.height=unit(2,"mm"),
+          legend.position=c(1,-0.03),
+          legend.justification=c(1,0),
+          legend.background=element_blank(),
+          legend.direction="horizontal")
+}
+
+maximum <- apply(FetchData(object, vars=paste0("adt_",show_tsne_markers), slot="counts"),2,quantile,probs=c(0.95))
+
+p.tsne.1 <- f.tsne.format(FeaturePlot(subset(object, subset=volume=="25µl"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[1]), slot="counts", max.cutoff=maximum[1], pt.size=0.1)[[1]])
+p.tsne.2 <- f.tsne.format(FeaturePlot(subset(object, subset=volume=="50µl"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[1]), slot="counts", max.cutoff=maximum[1], pt.size=0.1)[[1]])
+p.tsne.3 <- f.tsne.format(FeaturePlot(subset(object, subset=volume=="25µl"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[2]), slot="counts", max.cutoff=maximum[2], pt.size=0.1)[[1]])
+p.tsne.4 <- f.tsne.format(FeaturePlot(subset(object, subset=volume=="50µl"), reduction="tsne", sort=TRUE,  combine=FALSE, features=paste0("adt_",show_tsne_markers[2]), slot="counts", max.cutoff=maximum[2], pt.size=0.1)[[1]])
+
+p.tsne <- list(p.tsne.1 + ggtitle("25µl"),p.tsne.2 + ggtitle("50µl"),p.tsne.3 + ggtitle("25µl"),p.tsne.4 + ggtitle("50µl"))
+## Get common y-axis label
+p.tsne[[1]] <- p.tsne[[1]] + theme(axis.title.y=element_text())
+# a bit of a hack to get a common x-axis label
+p.tsne[[2]] <- p.tsne[[2]] + theme(axis.title.x=element_text(hjust=1.2))
+
+p.UMI.tsne <- cowplot::plot_grid(plotlist=p.tsne, 
+                                 align="h", 
+                                 axis="tb", 
+                                 nrow=1, 
+                                 rel_widths=c(1.05,1,1,1),
+                                 labels=c("E",show_tsne_markers[1],"F",show_tsne_markers[2]),
+                                 label_size=panel.label_size, 
+                                 vjust=panel.label_vjust, 
+                                 hjust=c(panel.label_hjust,0.5,panel.label_hjust,0.5))
+
+p.UMI.tsne
+```
+
+![](Volume-titration_files/figure-gfm/unnamed-chunk-2-1.png)<!-- -->
+
 ## Final plot
 
 ``` r
@@ -385,21 +440,35 @@ BC <- cowplot::plot_grid(B1, B2, C,
                          vjust=panel.label_vjust, 
                          hjust=panel.label_hjust)
 
+p.figure <- cowplot::plot_grid(cowplot::ggdraw(plot_grid(AD, BC, 
+                                      nrow=1, 
+                                      rel_widths=c(1,4), 
+                                      align="v", 
+                                      axis="l")) + 
+    cowplot::draw_plot(BC.legend,0.27,0.020,0.2,0.00001),
+    p.UMI.tsne, rel_heights=c(3,1.35), align="v", axis="lr", ncol=1)
+
+
 png(file=file.path(outdir,"Figure 3.png"), 
     width=figure.width.full, 
-    height=4.5, 
+    height=6, 
     units = figure.unit, 
     res=figure.resolution, 
     antialias=figure.antialias)
 
-  cowplot::ggdraw(plot_grid(AD, BC, nrow=1, rel_widths=c(1,4), align="v", axis="l")) + 
-    cowplot::draw_plot(BC.legend,0.27,0.020,0.2,0.00001)
+  p.figure
   
 dev.off()
 ```
 
     ## png 
     ##   2
+
+``` r
+p.figure
+```
+
+![](Volume-titration_files/figure-gfm/figure3-1.png)<!-- -->
 
 ## Individual titration plots
 
