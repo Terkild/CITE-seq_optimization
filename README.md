@@ -5,7 +5,7 @@ Data and Seurat V3 objects from the study is deposited at FigShare under this DO
 
 This repository contains all the code used in the processing of the aligned data and data analysis (used for generating all figures) included in the manuscript at BioRxiv.org: 
 
-[Improving oligo-conjugated antibody signal in multimodal single-cell analysis](https://doi.org/10.1101/2020.06.15.153080)
+[Improving oligo-conjugated antibody signal in multimodal single-cell analysis](https://www.biorxiv.org/content/10.1101/2020.06.15.153080v1)
 Terkild Brink Buus, Alberto Herrera, Ellie Ivanova, Eleni Mimitou, Anthony Cheng, Thales Papagiannakopoulos, Peter Smibert, Niels Odum, Sergei B Koralov. bioRxiv 2020.06.15.153080; doi: https://doi.org/10.1101/2020.06.15.153080
 
 **Pre-processing:**
